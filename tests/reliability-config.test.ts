@@ -69,6 +69,12 @@ describe('ReliabilityConfig - default values', () => {
       delete process.env[key];
     }
 
+    // A default-value test must not read another test's persisted configuration.
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-defaults-'));
+    fs.writeFileSync(path.join(configRoot, '.env'), '', 'utf-8');
+    process.env.OPENCODE_BRIDGE_CONFIG_DIR = configRoot;
+    process.env.OPENCODE_BRIDGE_ENV_FILE = path.join(configRoot, '.env');
+
     const { reliabilityConfig } = await loadConfigModule();
 
     expect(reliabilityConfig.cronEnabled).toBe(true);

@@ -530,7 +530,7 @@ function updateActiveVariant(variant?: string): void {
   const nextVariant = resolveSupportedVariant(variant, currentEffortOptions.value)
 
   writePreference(activePreferenceKey.value, {
-    ...activePreference.value,
+    ...((currentSession.value as any)?.apiVersion === 'v2' ? sessionPreferences.value[activePreferenceKey.value] : activePreference.value),
     variant: nextVariant,
   })
 }

@@ -257,8 +257,9 @@ export class DingtalkHandler {
       const dispatchOptions: {
         directory?: string;
         fallbackDirectories?: string[];
-        effort?: string;
-        model?: string;
+        variant?: string;
+        providerId?: string;
+        modelId?: string;
         agent?: string;
       } = {};
 
@@ -274,13 +275,16 @@ export class DingtalkHandler {
 
       // 确定 effort（优先使用 promptEffort，其次是 sessionConfig.preferredEffort）
       let effectiveEffort = promptEffort || sessionConfig?.preferredEffort;
+      const preferredModel=sessionConfig?.preferredModel ?? '';
+      const separator=preferredModel.search(/[:/]/);
+      const providerId=separator>0?preferredModel.slice(0,separator):undefined;
+      const modelId=separator>0?preferredModel.slice(separator+1):undefined;
 
       // 验证 effort 是否与当前模型兼容
       if (effectiveEffort && sessionConfig?.preferredModel) {
-        const [providerId, modelId] = sessionConfig.preferredModel.split(':');
         if (providerId && modelId) {
           try {
-            const providersPayload = await opencodeClient.getProviders();
+            const providersPayload = await opencodeClient.getProviders(directory ? {directory} : undefined);
             const providers = Array.isArray(providersPayload.providers) ? providersPayload.providers : [];
             const providerLower = providerId.toLowerCase();
             const modelLower = modelId.toLowerCase();
@@ -331,11 +335,12 @@ export class DingtalkHandler {
       }
 
       if (effectiveEffort) {
-        dispatchOptions.effort = effectiveEffort;
+        dispatchOptions.variant = effectiveEffort;
       }
 
-      if (sessionConfig?.preferredModel) {
-        dispatchOptions.model = sessionConfig.preferredModel;
+      if (providerId && modelId) {
+        dispatchOptions.providerId = providerId;
+        dispatchOptions.modelId = modelId;
       }
 
       if (sessionConfig?.preferredAgent) {

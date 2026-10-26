@@ -35,12 +35,8 @@ Web 会话列表会直接显示原服务中的会话；模型及 Agent 列表按
 
 ## 自启动
 
-Windows 当前用户登录自启动仍由系统设置页控制，启动命令指向 RuntimeRoot 下的 start.ps1。
-该入口必须调用本目录的 start.ps1 并传入 RuntimeRoot。例如：
-
-```powershell
-& 'C:\source\opencode-bridge\deploy\windows-native\start.ps1' -RuntimeRoot $PSScriptRoot
-```
+Windows 当前用户登录自启动仍由系统设置页控制，启动命令指向 RuntimeRoot 下自动生成的 `native-start.ps1`。
+对应的 `native-stop.ps1` 也会自动生成。迁移旧部署后，在系统设置页重新启用自启动，使注册表指向新入口。
 
 每次登录重新查询服务地址，支持原 OpenCode 服务端口变化。运行中的服务可重复启动，不产生重复 Bridge。
 

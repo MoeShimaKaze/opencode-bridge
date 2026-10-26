@@ -11,7 +11,7 @@ process.env.ADMIN_HOST='127.0.0.1';
 process.env.FEISHU_APP_ID='disabled-unused';
 process.env.FEISHU_APP_SECRET='disabled-unused';
 const powershell=path.join(process.env.SystemRoot ?? 'C:\\Windows','System32/WindowsPowerShell/v1.0/powershell.exe');
-process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND=`"${powershell}" -NoP -NonI -W Hidden -Exec RemoteSigned -File "${path.join(runtime,'start.ps1')}"`;
+process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND=`"${powershell}" -NoP -NonI -W Hidden -Exec RemoteSigned -File "${path.join(runtime,'native-start.ps1')}"`;
 const load=(file)=>import(pathToFileURL(path.join(source,'dist',file)).href);
 await load('config.js');
 const {createAdminServer}=await load('admin/admin-server.js');

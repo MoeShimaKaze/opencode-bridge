@@ -215,6 +215,12 @@ export function createOpencodeRoutes(options: OpencodeRoutesOptions): express.Ro
   // ── GET /api/opencode/models
   router.get('/models', async (_req, res) => {
     try {
+      const { getNativeModelGroups } = await import('../../opencode/native-models.js');
+      const native=await getNativeModelGroups();
+      if(native){
+        res.json({models:Object.fromEntries(native),raw:[...native].flatMap(([provider,models])=>models.map(model=>`${provider}/${model}`))});
+        return;
+      }
       const { execSync } = await import('node:child_process');
       const output = execSync('opencode models', { encoding: 'utf-8', timeout: 30000, windowsHide: true });
       const models = output

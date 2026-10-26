@@ -14,6 +14,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { getNativeModelGroups } from '../../../opencode/native-models.js';
 import {
   emitResourceChange,
 } from '../events.js';
@@ -138,6 +139,13 @@ function validateCustomProviderInput(input: CustomProviderInput): void {
  * 执行 opencode models 命令并解析输出
  */
 async function fetchModelsFromOpenCode(): Promise<Map<string, string[]>> {
+  try {
+    const native=await getNativeModelGroups();
+    if(native)return native;
+  } catch(error) {
+    console.error('[Providers] 原生模型列表读取失败:',error instanceof Error?error.message:String(error));
+    return new Map();
+  }
   return new Promise((resolve) => {
     const models = new Map<string, string[]>();
     const isWindows = process.platform === 'win32';
