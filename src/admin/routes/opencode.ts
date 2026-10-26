@@ -9,6 +9,8 @@ import { execSync, spawn } from 'node:child_process';
 import { configStore } from '../../store/config-store.js';
 import { opencodeClient } from '../../opencode/client.js';
 import { opencodeConfig } from '../../config.js';
+import { isSharedNativeService } from '../../opencode/service-mode.js';
+import { fetchOpenCode } from '../../opencode/shared-transport.js';
 import { probeTcpPort, resolveProcessManagerPath, toRecord, parseOptionalBoolean, buildOpencodeAuthHeaders } from '../utils.js';
 
 export interface OpencodeRoutesOptions {
@@ -18,9 +20,28 @@ export interface OpencodeRoutesOptions {
 export function createOpencodeRoutes(options: OpencodeRoutesOptions): express.Router {
   const router = express.Router();
   const { version } = options;
+  router.use((req,res,next)=>{
+    if(isSharedNativeService() && req.method==='POST' && ['/install','/upgrade','/start','/stop','/attach'].includes(req.path)){
+      res.status(409).json({error:'当前共用原 OpenCode 服务，请通过原 OpenCode 管理安装、升级和启停。'});
+      return;
+    }
+    next();
+  });
 
   // ── GET /api/opencode/status
   router.get('/status', async (_req, res) => {
+    if(isSharedNativeService()){
+      let info: {version?:string;healthy?:boolean}={};
+      let reason:string|undefined;
+      try{
+        const response=await fetchOpenCode(`${opencodeConfig.baseUrl}/global/health`,{signal:AbortSignal.timeout(2000)});
+        if(!response.ok)throw new Error(`OpenCode HTTP ${response.status}`);
+        info=await response.json() as typeof info;
+      }catch(error){reason=error instanceof Error?error.message:String(error);}
+      res.json({installed:true,version:info.version,host:opencodeConfig.host,port:opencodeConfig.port,
+        portOpen:info.healthy===true,portReason:reason,management:'external',apiVersion:'v2'});
+      return;
+    }
     try {
       let opencodeVersion: string | null = null;
       try {
@@ -36,6 +57,7 @@ export function createOpencodeRoutes(options: OpencodeRoutesOptions): express.Ro
         version: opencodeVersion,
         portOpen: probeResult.isOpen,
         portReason: probeResult.reason,
+        port: opencodeConfig.port,
       });
     } catch (error: unknown) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
@@ -44,6 +66,7 @@ export function createOpencodeRoutes(options: OpencodeRoutesOptions): express.Ro
 
   // ── GET /api/opencode/check-update
   router.get('/check-update', async (_req, res) => {
+    if(isSharedNativeService()){res.json({latestVersion:null,managedExternally:true});return;}
     try {
       let latestVersion: string | null = null;
       let githubError: string | null = null;

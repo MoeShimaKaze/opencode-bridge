@@ -15,6 +15,7 @@ import type { BridgeManager } from '../bridge-manager.js';
 import { getAutoStart, setAutoStart } from '../autostart.js';
 import { probeTcpPort } from '../utils.js';
 import { opencodeConfig } from '../../config.js';
+import { isSharedNativeService } from '../../opencode/service-mode.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -151,8 +152,8 @@ export function createAdminRoutes(options: AdminRoutesOptions): express.Router {
           console.log('[Admin] Bridge 进程已终止');
         }
 
-        // 2. 终止 OpenCode 进程
-        try {
+        // 2. Only a Bridge-managed legacy service belongs to this shutdown operation.
+        if(!isSharedNativeService())try {
           const processManagerPath = path.resolve(__dirname, '../../../scripts/process-manager.mjs');
           const { spawnSync } = await import('node:child_process');
           spawnSync(process.execPath, [processManagerPath, 'kill-opencode'], {

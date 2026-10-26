@@ -142,11 +142,15 @@ export interface OpenCodeStatus {
   version?: string
   portOpen: boolean
   portReason?: string
+  port?: number
+  management?: 'external'
+  apiVersion?: 'v2'
 }
 
 export interface OpenCodeUpdateCheck {
   latestVersion: string | null
   githubError?: string | null
+  managedExternally?: boolean
 }
 
 // ──────────────────── Cron 类型 ────────────────────
