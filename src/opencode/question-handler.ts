@@ -38,6 +38,8 @@ export interface PendingQuestion {
   currentQuestionIndex: number;
   optionPageIndexes: number[];
   createdAt: number;
+  submissionFailed?: boolean;
+  submitting?: boolean;
 }
 
 class QuestionHandler {
@@ -53,6 +55,14 @@ class QuestionHandler {
     conversationKey: string,
     chatId: string
   ): void {
+    const existing = this.pending.get(request.id);
+    if (existing && existing.request.sessionID === request.sessionID) {
+      existing.request = request;
+      existing.conversationKey = conversationKey;
+      existing.chatId = chatId;
+      this.sessionIndex.set(request.sessionID, request.id);
+      return;
+    }
     const pending: PendingQuestion = {
       request,
       conversationKey,
@@ -189,7 +199,7 @@ class QuestionHandler {
     const pending = this.pending.get(requestId);
     if (pending) {
       this.pending.delete(requestId);
-      this.sessionIndex.delete(pending.request.sessionID);
+      if (this.sessionIndex.get(pending.request.sessionID) === requestId) this.sessionIndex.delete(pending.request.sessionID);
       console.log(`[问题] 移除: requestId=${requestId.slice(0, 8)}...`);
     }
     return pending;

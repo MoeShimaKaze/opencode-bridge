@@ -195,6 +195,7 @@ export class OpenCodeEventHub {
 
     // AI 提问
     opencodeClient.on('questionAsked', (event) => this.handleQuestionAsked(event));
+    opencodeClient.on('questionResolved', (event) => this.handleQuestionResolved(event));
   }
 
   // ==================== 私有事件处理器 ====================
@@ -655,8 +656,24 @@ export class OpenCodeEventHub {
       }
 
       questionHandler.register(request, bufferKey, route.conversationId);
-      upsertTimelineNote(bufferKey, `question:${request.sessionID}:${request.id}`, '🤝 问答交互（请在当前流式卡片中作答）', 'question');
+      upsertTimelineNote(bufferKey, `question:${request.sessionID}:${request.id}`,
+        route.platform === 'dingtalk' ? '🤝 等待问题回答，请在钉钉回复选项编号或文字。' : '🤝 问答交互（请在当前流式卡片中作答）', 'question');
       outputBuffer.touch(bufferKey);
+
+      if (route.platform === 'dingtalk') {
+        const sender = platformRegistry.get('dingtalk')?.getSender();
+        const pending = questionHandler.get(request.id);
+        const index = pending?.currentQuestionIndex ?? 0;
+        const question = request.questions[index];
+        if (sender && question) {
+          const lines = [`🤝 ${question.header || 'AI 需要您回答问题'}（第 ${index + 1}/${request.questions.length} 题）`, question.question];
+          question.options.forEach((option, position) => lines.push(`${position + 1}. ${option.label}${option.description ? ` — ${option.description}` : ''}`));
+          if (question.options.length) lines.push(question.multiple ? '可多选，请回复选项编号或文字，多个答案用空格或逗号分隔。' : '请回复选项编号或选项文字。');
+          if (question.custom !== false) lines.push('也可直接输入自定义答案。');
+          lines.push('回复“跳过”可跳过当前题；/stop 可中断任务。');
+          sender.sendText(route.conversationId, lines.join('\n\n')).catch(error => console.error('[问题] 钉钉问答提示发送失败:', error));
+        }
+      }
 
       // 为 QQ 等不支持卡片的平台发送文本问答通知
       if (route.platform === 'qq') {
@@ -702,6 +719,16 @@ export class OpenCodeEventHub {
         }
       }
     }
+  }
+
+  private handleQuestionResolved(event: unknown): void {
+    if (!this.context || !event || typeof event !== 'object') return;
+    const resolved = event as { sessionID?: unknown; id?: unknown; status?: unknown };
+    if (typeof resolved.id !== 'string' || typeof resolved.sessionID !== 'string' || !['answered', 'cancelled'].includes(String(resolved.status))) return;
+    const pending = questionHandler.get(resolved.id);
+    if (!pending || pending.request.sessionID !== resolved.sessionID) return;
+    questionHandler.remove(resolved.id);
+    if (outputBuffer.get(pending.conversationKey)) outputBuffer.touch(pending.conversationKey);
   }
 
   /**
