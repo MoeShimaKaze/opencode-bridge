@@ -17,6 +17,9 @@ if(Test-Path -LiteralPath $recordFile){
         if($details.CommandLine.Contains((Join-Path $SourceRoot 'deploy\windows-native\admin.mjs'))){
             $status=Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/admin/bridge" -TimeoutSec 10
             if($status.running){Write-Output 'Native Bridge is already running.';return}
+            $restart=Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$Port/api/admin/restart" -TimeoutSec 30
+            if($restart.ok){Write-Output 'Native Bridge resumed in the existing management panel.';return}
+            throw 'Unable to resume the managed Bridge'
         }
     }
 }
