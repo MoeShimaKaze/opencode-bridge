@@ -19,9 +19,42 @@ export class V2EventMapper {
   private readonly seen = new Map<string, boolean>();
   private readonly messages = new Map<string, MessageState>();
   private readonly forms = new Map<string, Record<string, any>>();
+  private readonly settled = new Map<string, number>();
 
   getForm(id: string): any { return this.forms.get(id); }
   forgetForm(id: string): void { this.forms.delete(id); }
+
+  /** Reconcile only a confirmed inactive execution, before consuming buffered live events. */
+  restoreSession(sessionID: string, messages: Array<{ info: any; parts: any[] }>, outcome: unknown, idle: number): LegacyEvent[] {
+    const events: LegacyEvent[] = [];
+    let error: unknown;
+    for (const { info, parts } of messages) {
+      if (info.role !== 'assistant' || typeof info.id !== 'string') continue;
+      const [message] = this.message(sessionID, info.id, info.time?.created ?? idle);
+      const complete = { ...info, time: { ...info.time, completed: info.time?.completed ?? idle } };
+      // Establish role first, then deliver corrected parts before the completed message boundary.
+      const initial = { ...complete, time: { created: complete.time.created } };
+      delete initial.error;
+      events.push(emit('message.updated', { info: initial }));
+      for (const part of parts) {
+        if ((part.type === 'text' || part.type === 'reasoning') && typeof part.text === 'string') {
+          const ordinal = part.id.slice(`${info.id}:${part.type}:`.length);
+          remember(message.parts, `${part.type}:${ordinal}`, { ended: true }, 2048);
+          events.push(emit('message.part.updated', { part, replace: true }));
+        } else if (part.type === 'tool') {
+          remember(message.parts, `tool:${part.callID}`, { state: { status: part.state.status } }, 2048);
+          events.push(emit('message.part.updated', { part }));
+        }
+      }
+      message.info = complete;
+      if (complete.error) error = complete.error;
+      events.push(emit('message.updated', { info: complete }));
+    }
+    remember(this.settled, sessionID, idle, 256);
+    if (outcome === 'failed') events.push(emit('session.error', { sessionID, error: legacyError(error ?? 'Native execution failed while disconnected') }));
+    events.push(emit('session.status', { sessionID, status: { type: 'idle' } }), emit('session.idle', { sessionID }));
+    return events;
+  }
 
   map(value: unknown): LegacyEvent[] {
     const event = object(value);
@@ -34,6 +67,7 @@ export class V2EventMapper {
     const type: string = event.type;
     const sessionID = typeof data.sessionID === 'string' ? data.sessionID : undefined;
     const timestamp = milliseconds(event.created) ?? Date.now();
+    if (sessionID && type.startsWith('session.execution.') && timestamp <= (this.settled.get(sessionID) ?? -Infinity)) return [];
 
     if (type === 'form.created') return this.form(data.form);
     if (type === 'form.replied' || type === 'form.cancelled') {
@@ -117,6 +151,7 @@ export class V2EventMapper {
 
     if (!['session.step.started', 'session.step.ended', 'session.step.failed'].includes(type)) return [];
     const [message] = this.message(sessionID, messageID, timestamp);
+    if (message.info.time?.completed) return [];
     if (type === 'session.step.started') {
       const model = object(data.model);
       message.info = { ...message.info, mode: data.agent, agent: data.agent, providerID: model?.providerID, modelID: model?.id,

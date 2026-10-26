@@ -1,4 +1,4 @@
-import { toLegacyMessages, toLegacyProviders, toLegacySession, object } from './v2-records.js';
+import { toLegacyMessages, toLegacyProviders, toLegacySession, object, milliseconds } from './v2-records.js';
 import { V2EventMapper } from './v2-events.js';
 
 export interface TransportOptions {
@@ -17,6 +17,8 @@ const noContent = () => new Response(null, {status: 204});
 export class V2Transport {
   private readonly fetchImpl: typeof fetch;
   private readonly mapper = new V2EventMapper();
+  private readonly busySessions = new Map<string, { version: number; since?: number; promptID?: string }>();
+  private executionVersion = 0;
   constructor(private readonly options: TransportOptions) {this.fetchImpl = options.fetch ?? globalThis.fetch;}
 
   private async request(path: string, request: Request, options: {method?: string; body?: unknown; query?: URLSearchParams} = {}): Promise<Response> {
@@ -85,7 +87,18 @@ export class V2Transport {
     const payload = {text:parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('\n'),
       ...(files.length ? {files} : {}), ...(agents.length ? {agents} : {})};
     await this.select(session,body,request);
-    await this.request(`/api/session/${session}/prompt`,request,{method:'POST',body:payload});
+    const sessionID = decodeURIComponent(session);
+    const tracked = { version: ++this.executionVersion, promptID: undefined as string | undefined };
+    this.busySessions.set(sessionID, tracked);
+    try {
+      const response = await this.request(`/api/session/${session}/prompt`,request,{method:'POST',body:payload});
+      const admitted = object(await response.json());
+      const prompt = object(admitted?.data);
+      if (typeof prompt?.id === 'string') tracked.promptID = prompt.id;
+    } catch (error) {
+      if (this.busySessions.get(sessionID) === tracked) this.busySessions.delete(sessionID);
+      throw error;
+    }
     if (asynchronous) return noContent();
     await this.request(`/api/experimental/session/${session}/wait`,request,{method:'POST'});
     const messages = await this.history(session,request);
@@ -93,17 +106,86 @@ export class V2Transport {
     if (!reply) throw new Error('Native prompt finished without an assistant message');
     return json(reply);
   }
-  private stream(response: Response): Response {
+  private async active(request: Request): Promise<Set<string>> {
+    const active = object(await this.data('/api/session/active', request));
+    if (!active || Object.values(active).some(value => object(value)?.type !== 'running')) throw new Error('Invalid native active session inventory');
+    return new Set(Object.keys(active));
+  }
+
+  private async reconcile(request: Request): Promise<ReturnType<V2EventMapper['map']>> {
+    const tracked = Array.from(this.busySessions.entries());
+    if (!tracked.length) return [];
+    const active = await this.active(request);
+    const events: ReturnType<V2EventMapper['map']> = [];
+    for (const [sessionID, state] of tracked) {
+      if (this.busySessions.get(sessionID) !== state) continue;
+      const endpoint = `/api/session/${encodeURIComponent(sessionID)}`;
+      let session: Record<string, any> | undefined;
+      try { session = object(await this.data(endpoint, request)); }
+      catch (error) {
+        if (!(error instanceof NativeHttpError) || error.response.status !== 404) throw error;
+        this.busySessions.delete(sessionID);
+        continue;
+      }
+      const directory = object(session?.location)?.directory;
+      if (!session || typeof directory !== 'string') throw new Error('Native session recovery has no location');
+      const query = this.location(directory);
+      const [permissions, forms] = await Promise.all([
+        this.data('/api/permission/request', request, { query }), this.data('/api/form', request, { query }),
+      ]);
+      if (!Array.isArray(permissions) || !Array.isArray(forms)) throw new Error('Invalid native pending request inventory');
+      if (request.signal.aborted) throw request.signal.reason;
+      for (const permission of permissions) if (object(permission)?.sessionID === sessionID) events.push(...this.mapper.map({ type: 'permission.asked', data: permission }));
+      for (const form of forms) if (object(form)?.sessionID === sessionID) events.push(...this.mapper.map({ type: 'form.created', data: { form } }));
+      if (active.has(sessionID)) continue;
+      const history = await this.pages(`${endpoint}/message`, request, new URLSearchParams({ order: 'asc' }));
+      // The second inventory closes the race where a new execution starts during history hydration.
+      if ((await this.active(request)).has(sessionID) || this.busySessions.get(sessionID) !== state) continue;
+      if (request.signal.aborted) throw request.signal.reason;
+      const records = history.map(value => object(value));
+      let lastIdle = -1;
+      for (let index = records.length - 1; index >= 0; index--) if (records[index]?.type === 'idle') { lastIdle = index; break; }
+      const idle = milliseconds(records[lastIdle]?.time?.created) ?? milliseconds(session.time?.idle);
+      // An accepted prompt may still be queued before its execution starts. An older idle is not its completion.
+      const promptIndex = state.promptID ? records.findIndex(value => value?.id === state.promptID) : undefined;
+      if (idle === undefined || (state.since !== undefined && idle < state.since)
+        || (promptIndex !== undefined && (promptIndex < 0 || lastIdle <= promptIndex))) continue;
+      let previousIdle = lastIdle - 1;
+      while (previousIdle >= 0 && records[previousIdle]?.type !== 'idle') previousIdle--;
+      const execution = toLegacyMessages(sessionID, history.slice(previousIdle + 1, lastIdle < 0 ? undefined : lastIdle));
+      events.push(...this.mapper.restoreSession(sessionID, execution, records[lastIdle]?.outcome ?? session.outcome, idle));
+      this.busySessions.delete(sessionID);
+    }
+    return events;
+  }
+
+  private stream(response: Response, request: Request): Response {
     if (!response.body) throw new Error('Native event stream has no body');
     const mapper = this.mapper;
+    const transport = this;
     const reader = response.body.getReader();
     const decoder = new TextDecoder(); const encoder = new TextEncoder();
     let buffer = '';
+    let canceled = false;
+    const recovery = new AbortController();
+    const recoveryRequest = new Request(request, { signal: recovery.signal });
+    const dispose = () => request.signal.removeEventListener('abort', abort);
+    const stop = async (reason: unknown) => {
+      canceled = true;
+      recovery.abort(reason);
+      dispose();
+      await reader.cancel(reason).catch(() => {});
+    };
+    let fail: (reason: unknown) => void = () => {};
+    const abort = () => { void stop(request.signal.reason); fail(request.signal.reason); };
+    request.signal.addEventListener('abort', abort, { once: true });
     const body = new ReadableStream<Uint8Array>({
+      start(controller) { fail = reason => controller.error(reason); if (request.signal.aborted) abort(); },
       async pull(controller) {
         try {
           for (;;) {
             const {value,done} = await reader.read();
+            if (canceled) return;
             buffer = (buffer + decoder.decode(value,{stream:!done})).replace(/\r\n/g,'\n');
             let frameEnd: number; const frames: string[] = [];
             while ((frameEnd=buffer.indexOf('\n\n')) !== -1) {
@@ -111,15 +193,24 @@ export class V2Transport {
               const data = frame.split('\n').filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
               if (!data) continue;
               const native = JSON.parse(data);
-              for (const event of mapper.map(native)) frames.push(`data: ${JSON.stringify(event)}\n\n`);
+              const events = native.type === 'server.connected' ? await transport.reconcile(recoveryRequest) : mapper.map(native);
+              if (canceled) return;
+              for (const event of events) {
+                const sessionID = event.properties.sessionID;
+                if (native.type === 'session.execution.started' && typeof sessionID === 'string' && event.type === 'session.status') {
+                  transport.busySessions.set(sessionID, { version: ++transport.executionVersion, since: milliseconds(native.created) });
+                }
+                if (event.type === 'session.idle' && typeof sessionID === 'string') transport.busySessions.delete(sessionID);
+                frames.push(`data: ${JSON.stringify(event)}\n\n`);
+              }
             }
             if (frames.length) controller.enqueue(encoder.encode(frames.join('')));
-            if (done) {controller.close(); return;}
+            if (done) {dispose(); controller.close(); return;}
             if (frames.length) return;
           }
-        } catch (error) {controller.error(error); await reader.cancel().catch(()=>{});}
+        } catch (error) { if (!canceled) controller.error(error); await stop(error); }
       },
-      async cancel(reason) {await reader.cancel(reason);},
+      async cancel(reason) {await stop(reason);},
     });
     return new Response(body,{headers:{'content-type':'text/event-stream','cache-control':'no-cache'}});
   }
@@ -131,7 +222,7 @@ export class V2Transport {
     try {
       if (!['GET','HEAD'].includes(method)) {const text=await request.text(); body=text ? JSON.parse(text) : {};}
       if (path.startsWith('/api/')) return this.request(path,request,{method,query:url.searchParams,...(method !== 'GET' && method !== 'HEAD' ? {body} : {})});
-      if (path === '/event') return this.stream(await this.request('/api/event',request));
+      if (path === '/event') return this.stream(await this.request('/api/event',request), request);
       if (path === '/global/health' || path === '/health') return json({healthy:true,...await this.data('/api/info',request)});
       if (path === '/session/status') {
         const active=await this.data('/api/session/active',request);return json(Object.fromEntries(Object.keys(active ?? {}).map(id=>[id,{type:'busy'}])));
