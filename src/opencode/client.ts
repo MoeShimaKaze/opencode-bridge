@@ -420,6 +420,11 @@ class OpencodeClientWrapper extends EventEmitter {
   }
 
   // 回复问题 (question 工具)
+  async listPendingQuestions(options:{sessionId:string;directory?:string}):Promise<import('./question-handler.js').QuestionRequest[]> {
+    return this.messagesManager.listPendingQuestions(options);
+  }
+
+  // 回复问题 (question 工具)
   async replyQuestion(
     requestId: string,
     answers: string[][]

@@ -1,4 +1,4 @@
-import { ref, watch, type Ref } from 'vue'
+import { computed, ref, watch, type Ref } from 'vue'
 import { chatApi, type ChatEvent, type ChatModelRef } from '../api'
 import {
   applyChatEvent,
@@ -15,6 +15,8 @@ import {
 } from './chat-model'
 import { useChatStream } from './useChatStream'
 import { usePermission } from './usePermission'
+import type {ChatQuestionRequest} from '../api'
+import {applyQuestionEvent} from './question-model'
 
 const HISTORY_PAGE_SIZE = 30
 
@@ -32,6 +34,10 @@ export function useChatMessages(sessionId: Ref<string | null>) {
   const hasMore = ref(false)
   const nextCursor = ref<string | null>(null)
   const permission = usePermission()
+  const questions=ref<ChatQuestionRequest[]>([])
+  const activeQuestion=computed(()=>questions.value[0] ?? null)
+  const questionBusy=ref(false)
+  const questionError=ref<string|null>(null)
   let requestVersion = 0
 
   const stream = useChatStream(sessionId, {
@@ -85,6 +91,9 @@ export function useChatMessages(sessionId: Ref<string | null>) {
       hasMore.value = false
       nextCursor.value = null
       permission.reset()
+      questions.value=[]
+      questionBusy.value=false
+      questionError.value=null
 
       if (!nextSessionId) {
         return
@@ -107,6 +116,11 @@ export function useChatMessages(sessionId: Ref<string | null>) {
 
   function applyIncomingEvent(event: ChatEvent): void {
     switch (event.type) {
+      case 'question_ask':
+      case 'questions_snapshot':
+      case 'question_resolved':
+        questions.value=applyQuestionEvent(questions.value,event,sessionId.value ?? '')
+        return
       case 'task_update':
         tasks.value = event.todos
         return
@@ -237,6 +251,27 @@ export function useChatMessages(sessionId: Ref<string | null>) {
     }
   }
 
+  async function answerQuestion(answers?:string[][],reject=false):Promise<boolean>{
+    const request=activeQuestion.value;const targetSession=sessionId.value
+    const currentVersion=requestVersion
+    if(!request || !targetSession || questionBusy.value)return false
+    questionBusy.value=true;questionError.value=null
+    try{
+      await chatApi.respondQuestion({sessionId:targetSession,requestId:request.id,answers,reject})
+      if(currentVersion===requestVersion && targetSession===sessionId.value)questions.value=questions.value.filter(item=>item.id!==request.id)
+      return true
+    }catch(error:any){
+      if(currentVersion===requestVersion && targetSession===sessionId.value){
+        if(error.response?.data?.expired===true || error.response?.status===410){
+          questions.value=questions.value.filter(item=>item.id!==request.id)
+          return true
+        }
+        if(activeQuestion.value?.id===request.id)questionError.value=error.response?.data?.error || error.message || '回答提交失败，请重试'
+      }
+      return false
+    }finally{if(currentVersion===requestVersion && targetSession===sessionId.value)questionBusy.value=false}
+  }
+
   async function reload(): Promise<void> {
     if (!sessionId.value) {
       messages.value = []
@@ -328,6 +363,10 @@ export function useChatMessages(sessionId: Ref<string | null>) {
     hasMore,
     permissionQueue: permission.queue,
     activePermission: permission.activeRequest,
+    activeQuestion,
+    questionBusy,
+    questionError,
+    answerQuestion,
     resolvePermissionRequest: permission.resolve,
     reconnectStream: stream.reconnect,
     loadMoreHistory,

@@ -242,6 +242,12 @@ export class DingtalkHandler {
     pending.submitting = true;
     try {
       const result = await opencodeClient.replyQuestion(pending.request.id, answers);
+      if(result.expired){
+        questionHandler.remove(pending.request.id);
+        if(outputBuffer.get(pending.conversationKey))outputBuffer.touch(pending.conversationKey);
+        await sender.sendText(pending.chatId,'这个问题已在其他客户端处理或已过期，请重新发送后续消息。');
+        return;
+      }
       if (!result.ok) throw new Error(result.expired ? 'Question expired' : 'Question reply was not accepted');
     } catch (error) {
       pending.submissionFailed = true;

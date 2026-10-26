@@ -113,9 +113,10 @@ export class V2Transport {
   }
 
   private async reconcile(request: Request): Promise<ReturnType<V2EventMapper['map']>> {
-    const tracked = Array.from(this.busySessions.entries());
-    if (!tracked.length) return [];
     const active = await this.active(request);
+    // The Bridge may have started after a native question was already created.
+    for(const sessionID of active)if(!this.busySessions.has(sessionID))this.busySessions.set(sessionID,{version:++this.executionVersion});
+    const tracked = Array.from(this.busySessions.entries());
     const events: ReturnType<V2EventMapper['map']> = [];
     for (const [sessionID, state] of tracked) {
       if (this.busySessions.get(sessionID) !== state) continue;
@@ -264,7 +265,10 @@ export class V2Transport {
       }
       if (path === '/permission') return json(await this.data('/api/permission/request',request,{query:this.location(directory)}));
       if (path === '/question') {
-        const forms=await this.data('/api/form',request,{query:this.location(directory)});
+        const sessionID=url.searchParams.get('sessionID');
+        const forms=sessionID
+          ? await this.data(`/api/session/${encodeURIComponent(sessionID)}/form`,request)
+          : await this.data('/api/form',request,{query:this.location(directory)});
         return json(forms.flatMap((form:any)=>this.mapper.map({type:'form.created',data:{form}}).filter(event=>event.type==='question.asked').map(event=>event.properties)));
       }
       const question=path.match(/^\/question\/([^/]+)\/(reply|reject)$/);

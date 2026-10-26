@@ -7,6 +7,7 @@
       :sending="sending"
       :running="running"
       :aborting="aborting"
+      :waiting-for-answer="Boolean(question)"
       :model-label="modelLabel"
       :effort-label="effortLabel"
       :agent-label="agentLabel"
@@ -49,6 +50,8 @@
       @load-more="$emit('loadMore')"
       @revert="$emit('revert', $event)"
     />
+
+    <QuestionCard v-if="question" :request="question" :busy="questionBusy" :error="questionError" @answer="$emit('answerQuestion',$event)" @cancel="$emit('cancelQuestion')" />
 
     <TaskPlanPreview
       :tasks="tasks"
@@ -94,6 +97,8 @@ import MessageInput from './MessageInput.vue'
 import MessageList from './MessageList.vue'
 import SessionHeader from './SessionHeader.vue'
 import TaskPlanPreview from './TaskPlanPreview.vue'
+import QuestionCard from './QuestionCard.vue'
+import type {ChatQuestionRequest} from '../../api'
 import type { ChatAgentInfo, ChatModelProviderInfo, ChatSessionSummary, ChatTodoItem } from '../../api'
 import type { ChatMessageVm, ChatStreamState } from '../../composables/chat-model'
 
@@ -101,6 +106,9 @@ const TerminalPanel = defineAsyncComponent(() => import('./side-panels/TerminalP
 
 defineProps<{
   session: ChatSessionSummary | null
+  question:ChatQuestionRequest|null
+  questionBusy:boolean
+  questionError:string|null
   messages: ChatMessageVm[]
   loading: boolean
   loadingMore: boolean
@@ -130,6 +138,8 @@ defineProps<{
 }>()
 
 defineEmits<{
+  answerQuestion:[string[][]]
+  cancelQuestion:[]
   submit: [{ text: string; parts?: Array<{ type: 'text'; text: string } | { type: 'file'; mime: string; url: string; filename?: string }>; providerId?: string; modelId?: string; variant?: string; agent?: string }]
   abort: []
   reconnect: []

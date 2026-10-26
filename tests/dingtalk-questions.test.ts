@@ -45,6 +45,18 @@ afterEach(() => {
 });
 
 describe('DingTalk question ownership', () => {
+  it('retires an expired cached question instead of intercepting all later prompts', async () => {
+    register();
+    vi.mocked(opencodeClient.replyQuestion).mockResolvedValueOnce({ ok: false, expired: true });
+    const handler = new DingtalkHandler();
+    const sender = makeSender();
+    await handler.handleMessage(makeEvent('1'), sender);
+    expect(opencodeClient.sendMessage).not.toHaveBeenCalled();
+    expect(questionHandler.get('que_synthetic')).toBeUndefined();
+    await handler.handleMessage(makeEvent('A new synthetic prompt'), sender);
+    expect(opencodeClient.sendMessage).toHaveBeenCalledWith('ses_question', 'A new synthetic prompt', { directory: 'C:/synthetic/project' });
+  });
+
   it.each(['1', 'Login'])('submits %s to the question instead of the native prompt inbox', async answer => {
     register();
     await new DingtalkHandler().handleMessage(makeEvent(answer), makeSender());

@@ -87,7 +87,14 @@ export function registerBufferCallback(
     return fullText;
   };
 
+  outputBuffer.setCreateCallback(key => {
+    streamStateManager.clear(key);
+    qqProgressState.delete(key);
+    feishuRecentRenderCache.delete(key);
+  });
+
   outputBuffer.setUpdateCallback(async (buffer) => {
+    if (!outputBuffer.isCurrent(buffer)) return;
     const update = outputBuffer.getAndClear(buffer.key);
     const { text, thinking } = update;
     const timelineSegments = deps.getTimelineSegments(buffer.key);
@@ -179,6 +186,7 @@ export function registerBufferCallback(
         await sender.sendCard(conversationId, onlyText
           ? { qqText: thinkingPayload, forcePlainText: true }
           : { markdown: thinkingPayload, qqText: thinkingPayload });
+        if (!outputBuffer.isCurrent(buffer)) return;
         progress.sentThinking = current.thinking;
         progress.lastThinkingChunk = normalizedThinkingDelta;
       } else if (current.thinking.length > progress.sentThinking.length) {
@@ -198,6 +206,7 @@ export function registerBufferCallback(
             ? { qqText: finalPayload.qqText, forcePlainText: true }
             : { markdown: finalPayload.markdown, qqText: finalPayload.qqText }
         );
+        if (!outputBuffer.isCurrent(buffer)) return;
         progress.finalSent = true;
       }
 
@@ -221,16 +230,25 @@ export function registerBufferCallback(
         && chatSessionStore.getSessionByConversation('qq', conversationId)?.qqOutputOnlyText === true;
       const nextMessageIds: string[] = [];
       const existingMessageId = existingMessageIds[0];
-      const outboundPayload = qqOnlyText
+      const portablePayload = qqOnlyText
         ? { qqText: payload.qqText, forcePlainText: true }
         : payload;
+      const outboundPayload = platform === 'dingtalk'
+        ? { ...portablePayload, status, streamId: buffer.generation }
+        : portablePayload;
 
       if (existingMessageId) {
         const updated = await sender.updateCard(existingMessageId, outboundPayload);
+        if (!outputBuffer.isCurrent(buffer)) return;
         if (updated) {
+          nextMessageIds.push(existingMessageId);
+        } else if (platform === 'dingtalk') {
+          // A temporary AI card update failure must never create another reply bubble.
+          if(buffer.status!=='running')throw new Error('钉钉最终回复尚未送达，将保留内容重试');
           nextMessageIds.push(existingMessageId);
         } else {
           const replacementMessageId = await sender.sendCard(conversationId, outboundPayload);
+          if (!outputBuffer.isCurrent(buffer)) return;
           if (replacementMessageId) {
             void sender.deleteMessage(existingMessageId).catch(() => undefined);
             nextMessageIds.push(replacementMessageId);
@@ -238,8 +256,11 @@ export function registerBufferCallback(
         }
       } else {
         const newMessageId = await sender.sendCard(conversationId, outboundPayload);
+        if (!outputBuffer.isCurrent(buffer)) return;
         if (newMessageId) {
           nextMessageIds.push(newMessageId);
+        } else if(platform==='dingtalk') {
+          throw new Error('钉钉回复尚未送达，将保留内容重试');
         }
       }
 
@@ -323,6 +344,7 @@ export function registerBufferCallback(
 
       if (existingMessageId) {
         const updated = await sender.updateCard(existingMessageId, card);
+        if (!outputBuffer.isCurrent(buffer)) return;
         if (updated) {
           nextMessageIds.push(existingMessageId);
           continue;
@@ -333,6 +355,7 @@ export function registerBufferCallback(
       }
 
       const newMessageId = await sender.sendCard(conversationId, card);
+      if (!outputBuffer.isCurrent(buffer)) return;
       if (newMessageId) {
         nextMessageIds.push(newMessageId);
       }

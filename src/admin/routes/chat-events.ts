@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { chatEventBus } from '../chat/event-bus.js';
 import type { AddressedChatEvent } from '../chat/types.js';
 import { chatAuthMiddleware } from './chat-auth.js';
+import { opencodeClient } from '../../opencode/client.js';
+import type { ChatQuestionRequest } from '../chat/types.js';
 
 interface SSEQuery {
   session_id?: string;
@@ -50,11 +52,17 @@ export async function sseHandler(req: Request, res: Response): Promise<void> {
   res.flushHeaders?.();
 
   res.write(`id: 0\nevent: connected\ndata: {"clientId":"${clientId}"}\n\n`);
+  let closed=false;
+  let hydrated=false;
+  const questionsDuringHydration=new Map<string,ChatQuestionRequest>();
+  const resolvedDuringHydration=new Set<string>();
 
   const eventHandler = (addressedEvent: AddressedChatEvent) => {
     if (sessionId && addressedEvent.sessionId !== sessionId) {
       return;
     }
+    if(!hydrated && addressedEvent.event.type==='question_resolved')resolvedDuringHydration.add(addressedEvent.event.reqId);
+    if(!hydrated && addressedEvent.event.type==='question_ask')questionsDuringHydration.set(addressedEvent.event.req.id,addressedEvent.event.req);
 
     try {
       writeEvent(res, addressedEvent);
@@ -84,10 +92,22 @@ export async function sseHandler(req: Request, res: Response): Promise<void> {
   console.log('[Chat Events] SSE client connected:', clientId, sessionId);
 
   req.on('close', () => {
+    closed=true;
     clearInterval(keepalive);
     unsubscribe();
     console.log('[Chat Events] SSE client disconnected:', clientId);
   });
+  if(sessionId)void (async()=>{
+    try{
+      const pending=new Map((await opencodeClient.listPendingQuestions({sessionId})).map(question=>[question.id,question]));
+      for(const [id,question] of questionsDuringHydration)pending.set(id,question);
+      for(const id of resolvedDuringHydration)pending.delete(id);
+      if(!closed)res.write(`event: questions_snapshot\ndata: ${JSON.stringify({type:'questions_snapshot',requests:[...pending.values()].filter(question=>question.sessionID===sessionId)})}\n\n`);
+    }catch(error){
+      console.warn('[Chat Events] 读取待回答问题失败:',error instanceof Error?error.message:String(error));
+      if(!closed)res.write(`event: error\ndata: ${JSON.stringify({type:'error',message:'读取交互问题失败，请重新连接'})}\n\n`);
+    }finally{hydrated=true;questionsDuringHydration.clear();resolvedDuringHydration.clear();}
+  })();
 }
 
 export function registerChatEventsRoutes(app: any): void {

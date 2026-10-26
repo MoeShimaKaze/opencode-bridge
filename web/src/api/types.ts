@@ -526,6 +526,9 @@ export type ChatEvent =
   | { type: 'message_end'; msgId: string; usage?: ChatTokenUsage; finish?: string; error?: string }
   | { type: 'permission_ask'; req: ChatPermissionRequest }
   | { type: 'permission_resolved'; reqId: string; decision: 'allow' | 'reject' | 'always' }
+  | { type: 'question_ask'; req:ChatQuestionRequest }
+  | { type: 'questions_snapshot'; requests:ChatQuestionRequest[] }
+  | { type: 'question_resolved'; reqId:string; status:'answered'|'cancelled' }
   | { type: 'task_update'; todos: ChatTodoItem[] }
   | { type: 'session_idle'; sessionId: string }
   | { type: 'session_status'; sessionId: string; status: string }
@@ -535,6 +538,12 @@ export type ChatEvent =
 export interface ModelProvider {
   name: string
   models: string[]
+}
+export interface ChatQuestionRequest {
+  id:string
+  sessionID:string
+  questions:Array<{header:string;question:string;options:Array<{label:string;description:string}>;multiple?:boolean;custom?:boolean}>
+  tool?:{messageID:string;callID:string}
 }
 
 // ──────────────────── 工作区（Workspace）类型 ────────────────────

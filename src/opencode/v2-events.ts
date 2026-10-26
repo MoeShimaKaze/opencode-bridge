@@ -72,7 +72,7 @@ export class V2EventMapper {
     if (type === 'form.created') return this.form(data.form);
     if (type === 'form.replied' || type === 'form.cancelled') {
       if (typeof data.id === 'string') this.forgetForm(data.id);
-      return [];
+      return typeof data.id === 'string' && sessionID ? [emit(type==='form.replied'?'question.replied':'question.rejected',{id:data.id,sessionID})] : [];
     }
     if (!sessionID) return [];
     if (type === 'permission.asked') {
@@ -196,6 +196,8 @@ export class V2EventMapper {
         options, multiple: field.type === 'multiselect', custom: options.length === 0 || field.custom === true });
     }
     remember(this.forms, form.id, form, 256);
-    return [emit('question.asked', { id: form.id, sessionID: form.sessionID, questions })];
+    const tool=object(object(form.metadata)?.tool);
+    return [emit('question.asked', { id: form.id, sessionID: form.sessionID, questions,
+      ...(typeof tool?.messageID==='string' && typeof tool?.id==='string'?{tool:{messageID:tool.messageID,callID:tool.id}}:{}) })];
   }
 }

@@ -184,6 +184,12 @@ export class ChatEventNormalizer {
     bind<SessionErrorPayload>('sessionError', p => this.onSessionError(p));
     bind<SessionStatusPayload>('sessionStatus', p => this.onSessionStatus(p));
     bind<PermissionRequestPayload>('permissionRequest', p => this.onPermissionRequest(p));
+    bind<import('./types.js').ChatQuestionRequest>('questionAsked',p=>{
+      if(p?.id && p.sessionID)this.publish(p.sessionID,{type:'question_ask',req:p});
+    });
+    bind<{sessionID:string;id:string;status:'answered'|'cancelled'}>('questionResolved',p=>{
+      if(p?.id && p.sessionID)this.publish(p.sessionID,{type:'question_resolved',reqId:p.id,status:p.status});
+    });
 
     // Periodic cleanup of stale session states
     this.cleanupTimer = setInterval(() => this.cleanupStaleSessions(), CLEANUP_INTERVAL_MS);

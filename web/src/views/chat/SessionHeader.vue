@@ -22,6 +22,7 @@ const props = defineProps<{
   sending: boolean
   running: boolean
   aborting: boolean
+  waitingForAnswer?:boolean
   modelLabel: string
   effortLabel: string
   agentLabel: string
@@ -29,6 +30,7 @@ const props = defineProps<{
 
 const stateLabel = computed(() => {
   if (props.aborting) return '中断中'
+  if (props.waitingForAnswer) return '等待回答'
   if (props.running || props.sending) return '响应中'
   if (props.streamState === 'idle') return '空闲'
   if (props.streamState === 'connected') return '已连接'
@@ -38,6 +40,7 @@ const stateLabel = computed(() => {
 
 const stateBadgeClass = computed(() => {
   if (props.aborting) return 'state-badge--warn'
+  if (props.waitingForAnswer) return 'state-badge--active'
   if (props.running || props.sending) return 'state-badge--active'
   return 'state-badge--idle'
 })

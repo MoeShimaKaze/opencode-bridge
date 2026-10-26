@@ -336,6 +336,10 @@ export class EventStreamManager {
     if (event.type === 'question.asked' && event.properties) {
       this.deps.emitEvent('questionAsked', event.properties);
     }
+    if (['question.replied','question.rejected'].includes(event.type) && event.properties) {
+      const id=getFirstString(event.properties.id,event.properties.requestID,event.properties.requestId);
+      this.deps.emitEvent('questionResolved',{...event.properties,id,status:event.type==='question.replied'?'answered':'cancelled'});
+    }
   }
 
   // ── disconnect ─────────────────────────────────────────────────

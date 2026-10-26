@@ -39,13 +39,11 @@ async function getAccessToken(config: DingtalkConfig): Promise<string> {
   }
 
   // 获取新 token
-  const resp = await httpClient.get(
+  const resp = await httpClient.post(
     `${DINGTALK_API}/v1.0/oauth2/accessToken`,
     {
-      params: {
-        appKey: config.clientId,
-        appSecret: config.clientSecret,
-      },
+      appKey: config.clientId,
+      appSecret: config.clientSecret,
     }
   );
 
@@ -224,6 +222,10 @@ async function sendToGroup(
 export class DingtalkSender {
   private readonly sessionWebhooks = new Map<string, string>();
   private readonly aiCards = new Map<string, DingtalkAICardInstance>();
+  private readonly streamIds = new Map<string, unknown>();
+  private readonly streamContents = new Map<string, string>();
+  private readonly fallbackCards = new Map<string, { id: string }>();
+  private fallbackSequence = 0;
 
   /**
    * 缓存 sessionWebhook
@@ -292,7 +294,7 @@ export class DingtalkSender {
    * 发送卡片消息（支持 AI Card 流式响应）
    */
   async sendCard(conversationId: string, card: object): Promise<string | null> {
-    const payload = card as { text?: string; markdown?: string };
+    const payload = card as { text?: string; markdown?: string; status?: string; streamId?: unknown };
     const content = payload.markdown || payload.text || JSON.stringify(card, null, 2);
 
     const decoded = decodeDingtalkChatId(conversationId);
@@ -308,37 +310,32 @@ export class DingtalkSender {
       return null;
     }
 
-    const config: DingtalkConfig = {
-      clientId: account.client_id,
-      clientSecret: account.client_secret,
-      endpoint: account.endpoint,
-    };
-
-    // 检查是否已有 AI Card 实例
-    const existingCard = this.aiCards.get(conversationId);
-    if (existingCard) {
-      // 流式更新现有卡片
-      const success = await streamAICard(config, existingCard, content);
-      return success ? existingCard.cardInstanceId : null;
+    if (['processing', 'completed', 'failed'].includes(payload.status ?? '')) {
+      if (this.streamIds.has(conversationId) && this.streamIds.get(conversationId) !== payload.streamId) {
+        const previous=this.aiCards.get(conversationId);
+        if(previous)await finishAICard({clientId:account.client_id,clientSecret:account.client_secret,endpoint:account.endpoint},previous,
+          (this.streamContents.get(conversationId) ?? '')+'\n\n_此轮已停止更新。_');
+        this.clearAICard(conversationId);
+      }
+      this.streamIds.set(conversationId, payload.streamId);
+      let aiCard = this.aiCards.get(conversationId);
+      let fallback = this.fallbackCards.get(conversationId);
+      if (!aiCard && !fallback) {
+        aiCard = await this.createAICardForConversation(conversationId, isDingtalkGroupChat(rawConversationId)
+          ? { type: 'group', openConversationId: rawConversationId }
+          : { type: 'user', userId: rawConversationId }) ?? undefined;
+        if (!aiCard) {
+          fallback = { id: `dingtalk_fallback_${++this.fallbackSequence}` };
+          this.fallbackCards.set(conversationId, fallback);
+          if (payload.status === 'processing') await this.sendText(conversationId, '正在处理，完成后发送回复。');
+        }
+      }
+      const id = aiCard?.cardInstanceId ?? fallback!.id;
+      return await this.updateCard(id, payload) ? id : null;
     }
 
-    // 尝试使用 sessionWebhook 发送 Markdown
-    const sessionWebhook = this.sessionWebhooks.get(rawConversationId);
-
-    if (sessionWebhook) {
-      const result = await sendViaSessionWebhook(sessionWebhook, 'markdown', content);
-      return result.ok ? result.processQueryKey || 'sent' : null;
-    }
-
-    // 主动发送 Markdown 消息
-    const isGroup = isDingtalkGroupChat(rawConversationId);
-    if (isGroup) {
-      const result = await sendToGroup(config, rawConversationId, content, 'markdown');
-      return result.ok ? result.processQueryKey || 'sent' : null;
-    } else {
-      const result = await sendToUser(config, rawConversationId, content, 'markdown');
-      return result.ok ? result.processQueryKey || 'sent' : null;
-    }
+    // Standalone commands/questions must not replace an in-progress reply card.
+    return this.sendMarkdown(conversationId, content);
   }
 
   /**
@@ -348,9 +345,19 @@ export class DingtalkSender {
     const payload = card as { text?: string; markdown?: string; status?: string };
     const content = payload.markdown || payload.text || '';
 
+    for (const [conversationId, fallback] of this.fallbackCards) {
+      if (fallback.id !== messageId) continue;
+      if (payload.status !== 'completed' && payload.status !== 'failed') return true;
+      // No repeated partial markdown: a denied AI card gets only one final answer.
+      const sent = await this.sendMarkdown(conversationId, content);
+      if(sent !== null)this.clearAICard(conversationId);
+      return sent !== null;
+    }
+
     // 查找对应的 AI Card 实例
     for (const [conversationId, aiCard] of this.aiCards) {
       if (aiCard.cardInstanceId === messageId) {
+        this.streamContents.set(conversationId,content);
         const decoded = decodeDingtalkChatId(conversationId);
         if (!decoded) continue;
 
@@ -367,11 +374,12 @@ export class DingtalkSender {
         const isFinished = payload.status === 'completed' || payload.status === 'failed';
 
         if (isFinished) {
-          if (payload.status === 'failed') {
-            return await errorAICard(config, aiCard, content);
-          } else {
-            return await finishAICard(config, aiCard, content);
-          }
+          const updated = payload.status === 'failed'
+            ? await errorAICard(config, aiCard, content)
+            : await finishAICard(config, aiCard, content);
+          const delivered = updated || await this.sendMarkdown(conversationId, content) !== null;
+          if(delivered)this.clearAICard(conversationId);
+          return delivered;
         } else {
           return await streamAICard(config, aiCard, content);
         }
@@ -380,6 +388,21 @@ export class DingtalkSender {
 
     // 未找到 AI Card，无法更新
     return false;
+  }
+
+  private async sendMarkdown(conversationId: string, content: string): Promise<string | null> {
+    const decoded = decodeDingtalkChatId(conversationId);
+    if (!decoded) return null;
+    const account = configStore.getDingtalkAccount(decoded.accountId);
+    if (!account) return null;
+    const webhook = this.sessionWebhooks.get(decoded.conversationId);
+    const config = { clientId: account.client_id, clientSecret: account.client_secret, endpoint: account.endpoint };
+    const result = webhook
+      ? await sendViaSessionWebhook(webhook, 'markdown', content)
+      : isDingtalkGroupChat(decoded.conversationId)
+        ? await sendToGroup(config, decoded.conversationId, content, 'markdown')
+        : await sendToUser(config, decoded.conversationId, content, 'markdown');
+    return result.ok ? result.processQueryKey || 'sent' : null;
   }
 
   /**
@@ -482,5 +505,8 @@ export class DingtalkSender {
    */
   clearAICard(conversationId: string): void {
     this.aiCards.delete(conversationId);
+    this.fallbackCards.delete(conversationId);
+    this.streamIds.delete(conversationId);
+    this.streamContents.delete(conversationId);
   }
 }
