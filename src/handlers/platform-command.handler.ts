@@ -15,6 +15,7 @@ import { modelConfig, userConfig } from '../config.js';
 import type { PlatformSender } from '../platform/types.js';
 import { isChatModelAllowed, parseChatModelReference } from '../utils/chat-model-whitelist.js';
 import { EFFORT_USAGE_TEXT, EFFORT_DISPLAY_ORDER, type ProviderModelMeta, type EffortSupportInfo } from './command-types.js';
+import { formatOpenCodeMCPStatus, getOpenCodeMCPStatus } from '../opencode/mcp-status.js';
 
 /**
  * 多平台命令处理器
@@ -47,6 +48,10 @@ export class PlatformCommandHandler {
 
         case 'status':
           await this.handleStatus(chatId, sender);
+          break;
+
+        case 'mcp':
+          await this.handleMCPStatus(chatId, sender);
           break;
 
         case 'session':
@@ -166,6 +171,7 @@ export class PlatformCommandHandler {
 • \`/rename <新名称>\` 重命名会话
 • \`/project list\` 列出可用项目
 • \`/status\` 查看当前状态
+• \`/mcp\` 查看当前会话工作目录下的 MCP 连接状态
 • \`/clear\` 重置对话上下文
 
 💡 **提示**
@@ -216,6 +222,24 @@ export class PlatformCommandHandler {
     }
 
     await this.sendText(sender, chatId, lines.join('\n'));
+  }
+
+  private async handleMCPStatus(chatId: string, sender: PlatformSender): Promise<void> {
+    const session = chatSessionStore.getSessionByConversation(this.platform, chatId);
+    const directory = session?.resolvedDirectory || session?.defaultDirectory;
+    if (!directory) {
+      await this.sendText(sender, chatId, '当前会话没有工作目录，无法查询目录级 MCP 状态。请先绑定或创建一个工作目录会话。');
+      return;
+    }
+
+    try {
+      const status = await getOpenCodeMCPStatus(directory);
+      await this.sendText(sender, chatId, formatOpenCodeMCPStatus(status, directory));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn(`[${this.platform}] 查询 MCP 状态失败:`, detail);
+      await this.sendText(sender, chatId, `❌ MCP 状态查询失败：${detail}`);
+    }
   }
 
   private async handleNewSession(

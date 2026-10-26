@@ -32,6 +32,7 @@ import { formatRestartResultText, restartOpenCodeProcess } from '../reliability/
 import { parseCronIntentWithOpenCode } from '../reliability/cron-semantic.js';
 import { cleanupRuntimeCronJobsBySessionId, scanAndCleanupOrphanRuntimeCronJobs } from '../reliability/runtime-cron.js';
 import { isChatModelAllowed, parseChatModelReference } from '../utils/chat-model-whitelist.js';
+import { formatOpenCodeMCPStatus, getOpenCodeMCPStatus } from '../opencode/mcp-status.js';
 
 import {
   type ProviderModelMeta,
@@ -993,6 +994,10 @@ export class CommandHandler {
           await this.handleStatus(chatId, messageId);
           break;
 
+        case 'mcp':
+          await this.handleMCPStatus(chatId, messageId);
+          break;
+
         case 'session':
           if (command.sessionAction === 'new') {
             await this.handleNewSession(chatId, messageId, context.senderId, context.chatType, command.sessionDirectory, command.sessionName);
@@ -1236,6 +1241,24 @@ export class CommandHandler {
       '🤖 OpenCode 状态',
       `${status}${extra ? `\n${extra}` : ''}`
     );
+  }
+
+  private async handleMCPStatus(chatId: string, messageId: string): Promise<void> {
+    const session = chatSessionStore.getSession(chatId);
+    const directory = session?.resolvedDirectory || session?.defaultDirectory;
+    if (!directory) {
+      await feishuClient.reply(messageId, '当前会话没有工作目录，无法查询目录级 MCP 状态。请先绑定或创建一个工作目录会话。');
+      return;
+    }
+
+    try {
+      const status = await getOpenCodeMCPStatus(directory);
+      await feishuClient.reply(messageId, formatOpenCodeMCPStatus(status, directory));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn('[Command] 查询 MCP 状态失败:', detail);
+      await feishuClient.reply(messageId, `❌ MCP 状态查询失败：${detail}`);
+    }
   }
 
   private async handleNewSession(

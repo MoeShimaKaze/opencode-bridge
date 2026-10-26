@@ -27,6 +27,7 @@ export type CommandType =
   | 'config'       // 当前聊天配置
   | 'help'         // 显示帮助
   | 'status'       // 查看状态
+  | 'mcp'          // 查看MCP连接状态
   | 'command'      // 透传命令
   | 'permission'   // 权限响应
   | 'send'         // 发送文件到飞书
@@ -475,6 +476,9 @@ export function parseCommand(text: string): ParsedCommand {
       case 'status':
         return { type: 'status' };
 
+      case 'mcp':
+        return { type: 'mcp' };
+
       case 'compact':
       case 'session.compact':
         return { type: 'compact' };
@@ -557,6 +561,7 @@ export function getHelpText(): string {
 • \`/config session session_with_change true|false\` 控制会话列表中是否展示“切换至此Session”按钮（默认 false）
 • \`/clear\` 等价 \`/session new\`；\`/clear free session\` 清理空闲群聊并手动扫描僵尸 Cron
 • \`/status\` 查看当前绑定状态和群聊生命周期信息
+• \`/mcp\` 查看当前会话工作目录下的 MCP 连接状态
  • \`/commands\` 生成并发送最新命令清单文件
 
 💡 **提示**

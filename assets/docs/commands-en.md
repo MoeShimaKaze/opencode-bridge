@@ -14,6 +14,7 @@
 | `/help` | View help information |
 | `/panel` | Open control panel (model, role, effort status, stop, undo) |
 | `/status` | View current group binding status |
+| `/mcp` | View MCP connection status for the current session directory |
 
 ---
 

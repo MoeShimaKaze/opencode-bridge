@@ -19,18 +19,12 @@ import { getAgentRegistry } from '../../services/resources/agents/manager.js';
 import { getProviderRegistry } from '../../services/resources/providers/manager.js';
 import { onResourceChange } from '../../services/resources/events.js';
 import { opencodeConfig } from '../../config.js';
+import { getOpenCodeMCPStatus, type OpenCodeMCPStatus } from '../../opencode/mcp-status.js';
 import type { ResourceScope } from '../../services/resources/types.js';
 import type { SkillSlashCommand } from '../../services/resources/skills/registry.js';
 import type { MCPServerConfig, MCPInput, MCPServerSummary } from '../../services/resources/mcp/types.js';
 import type { AgentConfig, AgentInput } from '../../services/resources/agents/types.js';
 import type { ProviderConfig } from '../../services/resources/providers/types.js';
-
-type OpenCodeMCPStatus =
-  | { status: 'connected' }
-  | { status: 'disabled' }
-  | { status: 'failed'; error: string }
-  | { status: 'needs_auth' }
-  | { status: 'needs_client_registration'; error: string };
 
 interface OpenCodeProviderModel {
   id: string;
@@ -66,16 +60,6 @@ function appendDirectoryParam(url: URL, directory: unknown): void {
     return;
   }
   url.searchParams.set('directory', process.cwd());
-}
-
-async function requestOpenCodeMCPStatus(directory?: unknown): Promise<Record<string, OpenCodeMCPStatus>> {
-  const url = new URL('/mcp', opencodeConfig.baseUrl);
-  appendDirectoryParam(url, directory);
-  const response = await fetch(url, { headers: opencodeAuthHeaders() });
-  if (!response.ok) {
-    throw new Error(`OpenCode MCP status failed: HTTP ${response.status}`);
-  }
-  return await response.json() as Record<string, OpenCodeMCPStatus>;
 }
 
 async function requestOpenCodeMCPToggle(name: string, action: 'connect' | 'disconnect', directory?: unknown): Promise<boolean> {
@@ -506,7 +490,7 @@ export function createResourcesRoutes(): express.Router {
       let liveStatusError: string | undefined;
 
       try {
-        liveStatus = await requestOpenCodeMCPStatus(req.query.directory);
+        liveStatus = await getOpenCodeMCPStatus(req.query.directory);
       } catch (error: unknown) {
         liveStatusError = error instanceof Error ? error.message : String(error);
       }
@@ -564,7 +548,7 @@ export function createResourcesRoutes(): express.Router {
 
   router.get('/mcp/status', async (req, res) => {
     try {
-      res.json({ status: await requestOpenCodeMCPStatus(req.query.directory) });
+      res.json({ status: await getOpenCodeMCPStatus(req.query.directory) });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('[Resources API] Failed to get OpenCode MCP status:', message);

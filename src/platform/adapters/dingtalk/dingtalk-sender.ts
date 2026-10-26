@@ -225,7 +225,24 @@ export class DingtalkSender {
   private readonly streamIds = new Map<string, unknown>();
   private readonly streamContents = new Map<string, string>();
   private readonly fallbackCards = new Map<string, { id: string }>();
+  /** 会话类型（由消息回调 conversationType 得到，纯数字 conversationId 无法自行判断） */
+  private readonly chatTypes = new Map<string, 'group' | 'p2p'>();
   private fallbackSequence = 0;
+
+  /**
+   * 缓存会话类型（群聊/单聊）
+   */
+  setChatType(conversationId: string, chatType: 'group' | 'p2p'): void {
+    this.chatTypes.set(conversationId, chatType);
+  }
+
+  /**
+   * 判断会话是否群聊：优先使用消息回调声明的类型，未知时才按 conversationId 推断
+   */
+  isGroupConversation(conversationId: string): boolean {
+    const cached = this.chatTypes.get(conversationId);
+    return cached ? cached === 'group' : isDingtalkGroupChat(conversationId);
+  }
 
   /**
    * 缓存 sessionWebhook
@@ -321,7 +338,7 @@ export class DingtalkSender {
       let aiCard = this.aiCards.get(conversationId);
       let fallback = this.fallbackCards.get(conversationId);
       if (!aiCard && !fallback) {
-        aiCard = await this.createAICardForConversation(conversationId, isDingtalkGroupChat(rawConversationId)
+        aiCard = await this.createAICardForConversation(conversationId, this.isGroupConversation(rawConversationId)
           ? { type: 'group', openConversationId: rawConversationId }
           : { type: 'user', userId: rawConversationId }) ?? undefined;
         if (!aiCard) {
@@ -399,7 +416,7 @@ export class DingtalkSender {
     const config = { clientId: account.client_id, clientSecret: account.client_secret, endpoint: account.endpoint };
     const result = webhook
       ? await sendViaSessionWebhook(webhook, 'markdown', content)
-      : isDingtalkGroupChat(decoded.conversationId)
+      : this.isGroupConversation(decoded.conversationId)
         ? await sendToGroup(config, decoded.conversationId, content, 'markdown')
         : await sendToUser(config, decoded.conversationId, content, 'markdown');
     return result.ok ? result.processQueryKey || 'sent' : null;
@@ -429,7 +446,7 @@ export class DingtalkSender {
           const token = await getAccessToken(config);
 
           // 判断是单聊还是群聊
-          const isGroup = isDingtalkGroupChat(decoded.conversationId);
+          const isGroup = this.isGroupConversation(decoded.conversationId);
 
           const body = {
             robotCode: config.clientId,

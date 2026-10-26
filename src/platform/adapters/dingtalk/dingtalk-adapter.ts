@@ -220,6 +220,11 @@ export class DingtalkAdapter implements PlatformAdapter {
       return;
     }
 
+    // 判断聊天类型（回调里的 conversationType 才是可靠来源，
+    // 纯数字 conversationId 无法判断单聊/群聊，会被误判为群聊导致卡片投递 spaceId illegal）
+    const chatType = data.conversationType === '2' ? 'group' : 'p2p';
+    this.sender.setChatType(rawConversationId, chatType);
+
     // 缓存 sessionWebhook
     this.sender.cacheSessionWebhook(rawConversationId, sessionWebhook);
 
@@ -243,9 +248,6 @@ export class DingtalkAdapter implements PlatformAdapter {
 
     // 构建 ChatId
     const chatId = encodeDingtalkChatId(accountId, rawConversationId);
-
-    // 判断聊天类型
-    const chatType = data.conversationType === '2' ? 'group' : 'p2p';
 
     // 构建事件
     const event: PlatformMessageEvent = {

@@ -29,10 +29,12 @@ export function decodeDingtalkChatId(chatId: string): { accountId: string; conve
 }
 
 /**
- * 判断是否为群聊（以 cid 开头）
+ * 判断是否为群聊
+ * - 新版 openConversationId 以 cid 开头
+ * - 部分老群/内测群直接返回纯数字 conversationId（如 393167066326541834）
  */
 export function isDingtalkGroupChat(conversationId: string): boolean {
-  return conversationId.startsWith('cid');
+  return conversationId.startsWith('cid') || /^\d{10,}$/.test(conversationId);
 }
 
 /**

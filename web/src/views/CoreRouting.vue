@@ -239,10 +239,15 @@
         <el-row :gutter="24">
           <el-col :span="12">
             <el-form-item label="允许的目录白名单（ALLOWED_DIRECTORIES）">
-              <el-input v-model="form.ALLOWED_DIRECTORIES" type="textarea" :rows="2"
-                placeholder="/home/user/projects,/opt/repos" />
+              <div class="directory-rows">
+                <div v-for="(_, index) in allowedDirectoryRows" :key="`directory-${index}`" class="directory-row">
+                  <el-input v-model="allowedDirectoryRows[index]" placeholder="/home/user/projects" />
+                  <el-button plain @click="removeAllowedDirectory(index)">移除</el-button>
+                </div>
+                <el-button plain @click="addAllowedDirectory">添加目录</el-button>
+              </div>
               <div class="field-tip">
-                逗号分隔的绝对路径列表。<strong>仅约束平台接入</strong>（Telegram/Discord/QQ/企业微信/微信/WhatsApp/钉钉/飞书 等外部消息入口以及 /send 文件下发）；<strong>AI 工作区不受此限制</strong>，可浏览服务进程可访问的任意目录。未配置时禁止平台侧用户自定义路径
+                每行填写一个绝对路径。<strong>仅约束平台接入</strong>（Telegram/Discord/QQ/企业微信/微信/WhatsApp/钉钉/飞书 等外部消息入口以及 /send 文件下发）；<strong>AI 工作区不受此限制</strong>，可浏览服务进程可访问的任意目录。未配置时禁止平台侧用户自定义路径
               </div>
             </el-form-item>
           </el-col>
@@ -256,9 +261,19 @@
         <el-row :gutter="24">
           <el-col :span="16">
             <el-form-item label="项目别名映射（PROJECT_ALIASES）">
-              <el-input v-model="form.PROJECT_ALIASES" type="textarea" :rows="2"
-                placeholder='{"frontend":"/home/user/frontend","backend":"/home/user/backend"}' />
-              <div class="field-tip">JSON 格式，短名 → 绝对路径。用户可通过 <code>/session new 短名</code> 快速创建会话</div>
+              <el-alert v-if="projectAliasParseError" type="warning" :closable="false"
+                title="现有项目别名配置格式无效，已保留原值；清空后才能保存新表单数据。">
+                <el-button link type="warning" @click="clearInvalidProjectAliases">清空无效配置</el-button>
+              </el-alert>
+              <div class="alias-rows">
+                <div v-for="(alias, index) in projectAliasRows" :key="`alias-${index}`" class="alias-row">
+                  <el-input v-model="alias.alias" placeholder="项目短名" />
+                  <el-input v-model="alias.directory" placeholder="绝对路径" />
+                  <el-button plain @click="removeProjectAlias(index)">移除</el-button>
+                </div>
+                <el-button plain @click="addProjectAlias">添加别名</el-button>
+              </div>
+              <div class="field-tip">每行填写一个短名和绝对路径。用户可通过 <code>/session new 短名</code> 快速创建会话</div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -315,7 +330,7 @@
       <div class="sidebar">
         <ConfigActionBar
           :saving="saving"
-          :config-data="form"
+          :config-data="configData"
           @save="handleSave"
           @import-config="handleImportConfig"
         />
@@ -325,7 +340,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { BridgeSettings } from '../api'
 import { useConfigStore } from '../stores/config'
@@ -337,6 +352,9 @@ const enableManualBind = ref(true)
 const showThinking = ref(true)
 const showTool = ref(true)
 const gitRoot = ref(true)
+const allowedDirectoryRows = ref<string[]>([])
+const projectAliasRows = ref<Array<{ alias: string; directory: string }>>([])
+const projectAliasParseError = ref(false)
 
 const form = reactive({
   ROUTER_MODE: 'legacy',
@@ -373,6 +391,12 @@ const form = reactive({
 onMounted(() => syncFromStore())
 watch(() => store.settings, () => syncFromStore(), { deep: true })
 
+const configData = computed<BridgeSettings>(() => ({
+  ...form,
+  ALLOWED_DIRECTORIES: serializeAllowedDirectories(),
+  PROJECT_ALIASES: serializeProjectAliases(),
+}))
+
 function syncFromStore() {
   const s = store.settings
   Object.assign(form, {
@@ -406,6 +430,8 @@ function syncFromStore() {
     MAX_DELAYED_RESPONSE_WAIT_MS: s.MAX_DELAYED_RESPONSE_WAIT_MS || '120000',
     ATTACHMENT_MAX_SIZE: s.ATTACHMENT_MAX_SIZE || '52428800',
   })
+  allowedDirectoryRows.value = parseAllowedDirectories(form.ALLOWED_DIRECTORIES)
+  projectAliasRows.value = parseProjectAliases(form.PROJECT_ALIASES)
   enableManualBind.value = form.ENABLE_MANUAL_SESSION_BIND !== 'false'
   showThinking.value = form.SHOW_THINKING_CHAIN !== 'false'
   showTool.value = form.SHOW_TOOL_CHAIN !== 'false'
@@ -413,9 +439,24 @@ function syncFromStore() {
 }
 
 async function handleSave() {
+  if (projectAliasParseError.value) {
+    ElMessage.warning('请先清空无效的项目别名配置，或重新导入有效配置')
+    return
+  }
+  const incompleteAlias = projectAliasRows.value.some(row => Boolean(row.alias.trim()) !== Boolean(row.directory.trim()))
+  if (incompleteAlias) {
+    ElMessage.warning('请为每个项目别名同时填写短名和绝对路径')
+    return
+  }
+  const aliases = projectAliasRows.value.map(row => row.alias.trim()).filter(Boolean)
+  if (new Set(aliases).size !== aliases.length) {
+    ElMessage.warning('项目别名不能重复')
+    return
+  }
+
   saving.value = true
   try {
-    const result = await store.saveConfig({ ...form })
+    const result = await store.saveConfig(configData.value)
     if (result.needRestart) {
       ElMessageBox.confirm(`以下配置需要重启才能生效：${result.changedKeys.join('、')}`, '配置已保存', {
         confirmButtonText: '立即重启', cancelButtonText: '稍后手动重启', type: 'warning'
@@ -430,11 +471,71 @@ async function handleSave() {
 
 function handleImportConfig(config: BridgeSettings) {
   Object.assign(form, config)
+  allowedDirectoryRows.value = parseAllowedDirectories(form.ALLOWED_DIRECTORIES)
+  projectAliasRows.value = parseProjectAliases(form.PROJECT_ALIASES)
   // 同步开关状态
   enableManualBind.value = form.ENABLE_MANUAL_SESSION_BIND !== 'false'
   showThinking.value = form.SHOW_THINKING_CHAIN !== 'false'
   showTool.value = form.SHOW_TOOL_CHAIN !== 'false'
   gitRoot.value = form.GIT_ROOT_NORMALIZATION !== 'false'
+}
+
+function parseAllowedDirectories(value: string): string[] {
+  return value.split(',').map(directory => directory.trim()).filter(Boolean)
+}
+
+function parseProjectAliases(value: string): Array<{ alias: string; directory: string }> {
+  projectAliasParseError.value = false
+  if (!value.trim()) return []
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      projectAliasParseError.value = true
+      return []
+    }
+    return Object.entries(parsed as Record<string, unknown>)
+      .filter(([alias, directory]) => alias !== '__proto__' && alias !== 'constructor' && alias !== 'prototype'
+        && typeof directory === 'string' && Boolean(directory.trim()))
+      .map(([alias, directory]) => ({ alias, directory: (directory as string).trim() }))
+  } catch {
+    projectAliasParseError.value = true
+    return []
+  }
+}
+
+function serializeAllowedDirectories(): string {
+  return allowedDirectoryRows.value.map(directory => directory.trim()).filter(Boolean).join(',')
+}
+
+function serializeProjectAliases(): string {
+  const aliases: Record<string, string> = Object.create(null) as Record<string, string>
+  for (const row of projectAliasRows.value) {
+    const alias = row.alias.trim()
+    const directory = row.directory.trim()
+    if (alias && directory) aliases[alias] = directory
+  }
+  return JSON.stringify(aliases)
+}
+
+function addAllowedDirectory(): void {
+  allowedDirectoryRows.value.push('')
+}
+
+function removeAllowedDirectory(index: number): void {
+  allowedDirectoryRows.value.splice(index, 1)
+}
+
+function addProjectAlias(): void {
+  projectAliasRows.value.push({ alias: '', directory: '' })
+}
+
+function removeProjectAlias(index: number): void {
+  projectAliasRows.value.splice(index, 1)
+}
+
+function clearInvalidProjectAliases(): void {
+  projectAliasRows.value = []
+  projectAliasParseError.value = false
 }
 </script>
 
@@ -469,6 +570,11 @@ function handleImportConfig(config: BridgeSettings) {
 .config-card { margin-bottom: 20px; }
 .card-title { font-weight: 600; font-size: 15px; }
 .field-tip { font-size: 12px; color: #999; margin-top: 4px; line-height: 1.4; }
+.directory-rows, .alias-rows { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.directory-row, .alias-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.directory-row .el-input, .alias-row .el-input { min-width: 0; }
+.alias-row .el-input:first-child { flex: 0 0 34%; }
+.alias-row .el-input:nth-child(2) { flex: 1; }
 code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
 
 /* 平台输出配置紧凑布局 */
