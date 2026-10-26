@@ -54,6 +54,12 @@ function fixture(options: { streams: unknown[][]; active?: boolean; outcome?: 's
 }
 
 describe('native reconnect reconciliation', () => {
+  it('restores an already-running session question after a fresh Bridge startup', async () => {
+    const setup = fixture({ active: true, streams: [[event('server.connected')]] });
+    const recovered = await setup.stream();
+    expect(recovered).toContainEqual(expect.objectContaining({ type: 'question.asked', properties: expect.objectContaining({id:'frm_shared',sessionID:'ses_shared'}) }));
+    expect(recovered.some(value=>value.type==='session.idle')).toBe(false);
+  });
   it('forgets sessions deleted while disconnected without breaking the global stream', async () => {
     const setup = fixture({ deleted: true, streams: [
       [event('session.execution.started', { sessionID: 'ses_shared' }, time)],

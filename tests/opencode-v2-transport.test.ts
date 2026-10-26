@@ -19,6 +19,19 @@ async function fixture(handler: (req: IncomingMessage, body: any, res: ServerRes
 const send = (res: ServerResponse, data: unknown) => res.end(JSON.stringify(data));
 
 describe('native OpenCode compatibility transport', () => {
+  it('restores pending questions for the exact native session and submits an answer to that form', async () => {
+    const calls:Array<{path:string;body:any}>=[];
+    const baseUrl=await fixture((req,body,res)=>{
+      calls.push({path:req.url!,body});
+      if(req.url==='/api/session/ses_shared/form')send(res,{data:[{id:'frm_one',sessionID:'ses_shared',title:'Question',metadata:{tool:{messageID:'msg_one',id:'call_one'}},fields:[{key:'q0',type:'string',title:'Continue?',custom:true}]}]});
+      else if(req.url==='/api/session/ses_shared/form/frm_one/reply')send(res,{data:true});
+      else {res.statusCode=404;send(res,{});}
+    });
+    const transport=new OpenCodeTransport({baseUrl,defaultDirectory:'C:/unrelated'});
+    expect(await(await transport.fetch(`${baseUrl}/question?sessionID=ses_shared`)).json()).toMatchObject([{id:'frm_one',sessionID:'ses_shared',tool:{messageID:'msg_one',callID:'call_one'}}]);
+    expect((await transport.fetch(`${baseUrl}/question/frm_one/reply`,{method:'POST',body:JSON.stringify({answers:[['Login']]})})).ok).toBe(true);
+    expect(calls).toEqual([{path:'/api/session/ses_shared/form',body:undefined},{path:'/api/session/ses_shared/form/frm_one/reply',body:{answer:{q0:'Login'}}}]);
+  });
   it('collects all session pages and preserves native IDs and directories', async () => {
     const calls: string[] = [];
     const baseUrl = await fixture((req, _body, res) => {

@@ -15,6 +15,8 @@ export function applyBufferedContent(current: { text: string; thinking: string }
 // 输出缓冲区（用于聚合输出后定时发送）
 interface BufferedOutput {
   key: string;
+  generation: number;
+  deliveryFailures:number;
   chatId: string;
   messageId: string | null;
   thinkingMessageId: string | null;
@@ -44,10 +46,21 @@ interface BufferedOutput {
 class OutputBuffer {
   private buffers: Map<string, BufferedOutput> = new Map();
   private updateCallback: ((buffer: BufferedOutput) => Promise<void>) | null = null;
+  private createCallback: ((key: string) => void) | null = null;
+  private readonly updates = new Map<string, Promise<void>>();
+  private generation = 0;
 
   // 设置更新回调
   setUpdateCallback(callback: (buffer: BufferedOutput) => Promise<void>): void {
     this.updateCallback = callback;
+  }
+
+  setCreateCallback(callback: (key: string) => void): void {
+    this.createCallback = callback;
+  }
+
+  isCurrent(buffer: Pick<BufferedOutput, 'key' | 'generation'>): boolean {
+    return this.buffers.get(buffer.key)?.generation === buffer.generation;
   }
 
   // 创建或获取缓冲区
@@ -55,8 +68,11 @@ class OutputBuffer {
     let buffer = this.buffers.get(key);
 
     if (!buffer) {
+      this.createCallback?.(key);
       buffer = {
         key,
+        generation: ++this.generation,
+        deliveryFailures:0,
         chatId,
         messageId: null,
         thinkingMessageId: null,
@@ -195,16 +211,16 @@ class OutputBuffer {
   }
 
   // 调度更新
-  private scheduleUpdate(key: string): void {
+  private scheduleUpdate(key: string, delay=outputConfig.updateInterval): void {
     const buffer = this.buffers.get(key);
     if (!buffer || buffer.timer) return;
 
     buffer.timer = setTimeout(() => {
       // 再次检查 buffer 是否仍然存在（可能在定时器触发前被 clearAll 清理）
       const currentBuffer = this.buffers.get(key);
-      if (!currentBuffer) return;
+      if (currentBuffer !== buffer) return;
       this.triggerUpdate(key);
-    }, outputConfig.updateInterval);
+    }, delay);
   }
 
   // 触发更新
@@ -218,20 +234,28 @@ class OutputBuffer {
       buffer.timer = null;
     }
 
-    buffer.lastUpdate = Date.now();
-
-    const shouldUpdate = buffer.dirty || buffer.status !== 'running';
-
-    // 调用回调
-    if (this.updateCallback && shouldUpdate) {
+    const previous = this.updates.get(key) ?? Promise.resolve();
+    const update = previous.then(async () => {
+      if (!this.isCurrent(buffer) || !this.updateCallback || (!buffer.dirty && buffer.status === 'running')) return;
+      buffer.lastUpdate = Date.now();
       buffer.dirty = false;
-      try {
-        await this.updateCallback(buffer);
-      } catch (error) {
-        buffer.dirty = true;
-        throw error;
+      // Status must describe this flush, even if completion arrives while HTTP is pending.
+      const snapshot = { ...buffer, tools: [...buffer.tools] };
+      try { await this.updateCallback(snapshot); if(this.isCurrent(buffer))buffer.deliveryFailures=0; }
+      catch (error) {
+        if (this.isCurrent(buffer)) {
+          buffer.dirty = true;
+          if(buffer.status!=='running' && buffer.deliveryFailures<3){
+            buffer.deliveryFailures+=1;
+            this.scheduleUpdate(key,1000*Math.pow(2,buffer.deliveryFailures-1));
+          }
+        }
+        console.error('[outputBuffer] 更新失败:', error);
       }
-    }
+    });
+    this.updates.set(key, update);
+    await update;
+    if (this.updates.get(key) === update) this.updates.delete(key);
   }
 
   // 获取并清空内容
@@ -280,9 +304,9 @@ class OutputBuffer {
       }
       buffer.status = 'aborted';
       // 触发最后一次更新
-      this.triggerUpdate(key);
-      // 清理缓冲区
-      this.clear(key);
+      void this.triggerUpdate(key).then(() => {
+        if (this.isCurrent(buffer) && !buffer.dirty) this.clear(key);
+      });
     }
   }
 

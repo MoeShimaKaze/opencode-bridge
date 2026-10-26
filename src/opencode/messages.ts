@@ -1,6 +1,7 @@
 import type { OpencodeClient as SdkOpencodeClient } from '@opencode-ai/sdk';
 import type { Message, Part } from '@opencode-ai/sdk';
 import type { PermissionResponseOptions, ShellExecutionResult } from './client.js';
+import type { QuestionRequest } from './question-handler.js';
 import { opencodeConfig, modelConfig } from '../config.js';
 import { fetchOpenCode, getOpenCodeProtocol } from './shared-transport.js';
 import {
@@ -434,6 +435,18 @@ export class MessagesManager {
     }
 
     return { ok: false };
+  }
+
+  // 回复问题 (question 工具)
+  async listPendingQuestions(options:{sessionId:string;directory?:string}):Promise<QuestionRequest[]> {
+    const query=new URLSearchParams({sessionID:options.sessionId});
+    if(options.directory)query.set('directory',options.directory);
+    const response=await fetchOpenCode(`${opencodeConfig.baseUrl}/question?${query}`,{headers:withOpencodeAuthorizationHeaders()});
+    if(!response.ok)throw new Error(`读取待回答问题失败（HTTP ${response.status}）`);
+    const body=await response.json() as any;
+    const questions=Array.isArray(body)?body:body?.data;
+    if(!Array.isArray(questions))throw new Error('待回答问题清单格式错误');
+    return questions.filter((question:QuestionRequest)=>question.sessionID===options.sessionId && typeof question.id==='string' && Array.isArray(question.questions));
   }
 
   // 回复问题 (question 工具)

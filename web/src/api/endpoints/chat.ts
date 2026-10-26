@@ -14,6 +14,9 @@ import type {
 } from '../types'
 
 export const chatApi = {
+  async respondQuestion(payload:{sessionId:string;requestId:string;answers?:string[][];reject?:boolean}):Promise<void>{
+    await http.post(`/chat/questions/${encodeURIComponent(payload.requestId)}/${payload.reject?'reject':'reply'}`,{sessionId:payload.sessionId,answers:payload.answers});
+  },
   async listSessions(): Promise<ChatSessionSummary[]> {
     const res = await http.get<{ sessions: ChatSessionSummary[] }>('/chat/sessions')
     return res.data.sessions

@@ -1,4 +1,4 @@
-import { type QuestionInfo } from '../feishu/cards.js';
+import { type QuestionInfo } from './question-handler.js';
 
 const skipKeywords = new Set(['跳过', 'skip', 'pass', '忽略']);
 

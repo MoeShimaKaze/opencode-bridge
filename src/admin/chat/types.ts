@@ -42,6 +42,7 @@ export interface ChatPermissionRequest {
   callId?: string;
   metadata?: Record<string, unknown>;
 }
+export type ChatQuestionRequest = import('../../opencode/question-handler.js').QuestionRequest;
 
 export type ChatEvent =
   | { type: 'message_start'; msg: ChatMessageMeta }
@@ -68,6 +69,9 @@ export type ChatEvent =
   | { type: 'message_end'; msgId: string; usage?: ChatTokenUsage; finish?: string; error?: string }
   | { type: 'permission_ask'; req: ChatPermissionRequest }
   | { type: 'permission_resolved'; reqId: string; decision: 'allow' | 'reject' | 'always' }
+  | { type: 'question_ask'; req: ChatQuestionRequest }
+  | { type: 'questions_snapshot'; requests: ChatQuestionRequest[] }
+  | { type: 'question_resolved'; reqId:string; status:'answered'|'cancelled' }
   | { type: 'task_update'; todos: ChatTodoItem[] }
   | { type: 'session_idle'; sessionId: string }
   | { type: 'session_status'; sessionId: string; status: string }

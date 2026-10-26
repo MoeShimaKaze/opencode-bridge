@@ -19,6 +19,8 @@ import { permissionHandler } from '../permissions/handler.js';
 import { PlatformCommandHandler } from './platform-command.handler.js';
 import type { PermissionDecision } from './dingtalk-types.js';
 import { parsePermissionDecision } from './dingtalk-utils.js';
+import { questionHandler, type PendingQuestion } from '../opencode/question-handler.js';
+import { parseQuestionAnswerText } from '../opencode/question-parser.js';
 
 export class DingtalkHandler {
   private readonly commandHandler = new PlatformCommandHandler('dingtalk');
@@ -110,27 +112,25 @@ export class DingtalkHandler {
       return;
     }
 
+    const command = parseCommand(trimmed);
+    // Explicit commands must remain available while an interactive tool is waiting.
+    if (trimmed.startsWith('/') && command.type !== 'prompt') {
+      await this.dispatchCommand(command, event, sender);
+      return;
+    }
+
     // 0. 检查是否有待处理的权限请求
     const permissionHandled = await this.tryHandlePendingPermission(conversationId, trimmed, sender);
     if (permissionHandled) {
       return;
     }
 
-    // 1. 解析命令
-    const command = parseCommand(trimmed);
+    if (await this.tryHandlePendingQuestion(conversationId, trimmed, sender)) return;
 
     // 2. 使用 PlatformCommandHandler 处理非 prompt 命令
     if (command.type !== 'prompt') {
       console.log(`[钉钉] 收到命令：${command.type}`);
-      await this.commandHandler.handle(
-        command,
-        {
-          chatId: conversationId,
-          senderId,
-          chatType: chatType === 'group' ? 'group' : 'p2p',
-        },
-        sender
-      );
+      await this.dispatchCommand(command, event, sender);
       return;
     }
 
@@ -165,6 +165,101 @@ export class DingtalkHandler {
       command.promptEffort,
       sender
     );
+  }
+
+  private async dispatchCommand(command: ParsedCommand, event: PlatformMessageEvent, sender: PlatformSender): Promise<void> {
+    await this.commandHandler.handle(command, { chatId: event.conversationId, senderId: event.senderId,
+      chatType: event.chatType === 'group' ? 'group' : 'p2p' }, sender);
+  }
+
+  private async tryHandlePendingQuestion(chatId: string, text: string, sender: PlatformSender): Promise<boolean> {
+    const sessionId = chatSessionStore.getSessionIdByConversation('dingtalk', chatId);
+    if (!sessionId) return false;
+    let pending = questionHandler.getBySession(sessionId);
+    if (!pending || pending.chatId !== chatId) {
+      const config = chatSessionStore.getSessionByConversation('dingtalk', chatId);
+      const directory = config?.resolvedDirectory || config?.defaultDirectory;
+      try {
+        const requests = await opencodeClient.listPendingQuestions({ sessionId, ...(directory ? { directory } : {}) });
+        if (chatSessionStore.getSessionIdByConversation('dingtalk', chatId) !== sessionId) {
+          await sender.sendText(chatId, '当前会话已切换，请在新会话中重新发送。');
+          return true;
+        }
+        const request = requests.find(value => value.sessionID === sessionId && value.questions.length > 0);
+        if (!request) return false;
+        questionHandler.register(request, `chat:dingtalk:${chatId}`, chatId);
+        pending = questionHandler.get(request.id);
+      } catch (error) {
+        console.error('[钉钉] 恢复待回答问题失败:', error);
+        await sender.sendText(chatId, '暂时无法确认待回答问题，请稍后重试；也可使用 /stop 中断任务。');
+        return true;
+      }
+    }
+    if (!pending || pending.request.questions.length === 0) return false;
+    if (pending.submitting) {
+      await sender.sendText(chatId, '正在提交问题回答，请稍候。');
+      return true;
+    }
+    if (pending.submissionFailed && /^(重试|重新提交|提交|retry)$/i.test(text.trim())) {
+      await this.submitQuestionAnswers(pending, sender);
+      return true;
+    }
+    const index = Math.min(Math.max(pending.currentQuestionIndex, 0), pending.request.questions.length - 1);
+    const question = pending.request.questions[index];
+    const exactOption = question.options.find(option => option.label.toLowerCase() === text.trim().toLowerCase());
+    const parsed = exactOption ? { type: 'selection' as const, values: [exactOption.label] } : parseQuestionAnswerText(text, question);
+    if (!parsed || (parsed.type === 'custom' && question.custom === false)) {
+      await this.sendQuestionPrompt(pending, sender);
+      return true;
+    }
+    questionHandler.setDraftAnswer(pending.request.id, index, parsed.type === 'selection' ? parsed.values ?? [] : []);
+    questionHandler.setDraftCustomAnswer(pending.request.id, index, parsed.type === 'custom' ? parsed.custom ?? text : '');
+    pending.submissionFailed = false;
+    if (index + 1 < pending.request.questions.length) {
+      questionHandler.setCurrentQuestionIndex(pending.request.id, index + 1);
+      if (outputBuffer.get(pending.conversationKey)) outputBuffer.touch(pending.conversationKey);
+      await this.sendQuestionPrompt(pending, sender);
+    } else await this.submitQuestionAnswers(pending, sender);
+    return true;
+  }
+
+  private async sendQuestionPrompt(pending: PendingQuestion, sender: PlatformSender): Promise<void> {
+    const index = pending.currentQuestionIndex;
+    const question = pending.request.questions[index];
+    const lines = [`🤝 ${question.header || 'AI 需要您回答问题'}（第 ${index + 1}/${pending.request.questions.length} 题）`, question.question];
+    question.options.forEach((option, position) => lines.push(`${position + 1}. ${option.label}${option.description ? ` — ${option.description}` : ''}`));
+    if (question.options.length) lines.push(question.multiple ? '可多选，请回复选项编号或文字，多个答案用空格或逗号分隔。' : '请回复选项编号或选项文字。');
+    if (question.custom !== false) lines.push('也可直接输入自定义答案。');
+    lines.push('回复“跳过”可跳过当前题；/stop 可中断任务。');
+    await sender.sendText(pending.chatId, lines.join('\n\n'));
+  }
+
+  private async submitQuestionAnswers(pending: PendingQuestion, sender: PlatformSender): Promise<void> {
+    const answers = pending.request.questions.map((_question, index) => {
+      const custom = pending.draftCustomAnswers[index]?.trim();
+      return custom ? [custom] : pending.draftAnswers[index] ?? [];
+    });
+    pending.submitting = true;
+    try {
+      const result = await opencodeClient.replyQuestion(pending.request.id, answers);
+      if(result.expired){
+        questionHandler.remove(pending.request.id);
+        if(outputBuffer.get(pending.conversationKey))outputBuffer.touch(pending.conversationKey);
+        await sender.sendText(pending.chatId,'这个问题已在其他客户端处理或已过期，请重新发送后续消息。');
+        return;
+      }
+      if (!result.ok) throw new Error(result.expired ? 'Question expired' : 'Question reply was not accepted');
+    } catch (error) {
+      pending.submissionFailed = true;
+      console.error('[钉钉] 提交问题回答失败:', error);
+      await sender.sendText(pending.chatId, '答案提交失败，已保留填写内容。回复“重试”重新提交，或重新回答当前题。');
+      return;
+    } finally {
+      pending.submitting = false;
+    }
+    questionHandler.remove(pending.request.id);
+    if (outputBuffer.get(pending.conversationKey)) outputBuffer.touch(pending.conversationKey);
+    await sender.sendText(pending.chatId, '✅ 已提交问题回答，任务继续执行。');
   }
 
   /**

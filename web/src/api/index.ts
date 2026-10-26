@@ -45,6 +45,7 @@ export type {
   ChatTokenUsage,
   ChatTodoItem,
   ChatPermissionRequest,
+  ChatQuestionRequest,
   ChatModelRef,
   ChatMessageMeta,
   ChatMessagePart,

@@ -46,13 +46,11 @@ async function getAccessToken(config: DingtalkConfig): Promise<string> {
   }
 
   // 获取新 token
-  const resp = await httpClient.get(
+  const resp = await httpClient.post(
     `${DINGTALK_API}/v1.0/oauth2/accessToken`,
     {
-      params: {
-        appKey: config.clientId,
-        appSecret: config.clientSecret,
-      },
+      appKey: config.clientId,
+      appSecret: config.clientSecret,
     }
   );
 
@@ -164,6 +162,7 @@ export async function createAICard(
       outTrackId: cardInstanceId,
       cardData: {
         cardParamMap: {
+          flowStatus: AICardStatus.PROCESSING,
           config: JSON.stringify({ autoLayout: true }),
         },
       },

@@ -40,6 +40,9 @@
       <ChatView
         class="workspace-column workspace-column--chat"
         :session="currentSession"
+        :question="activeQuestion"
+        :question-busy="questionBusy"
+        :question-error="questionError"
         :messages="messages"
         :loading="messagesLoading"
         :loading-more="messagesLoadingMore"
@@ -67,6 +70,8 @@
         :terminal-visible="isPanelVisible('terminal')"
         :workspace-directory="workspaceDirectory || undefined"
         @submit="handleSubmit"
+        @answer-question="answerQuestion($event)"
+        @cancel-question="answerQuestion(undefined,true)"
         @abort="handleAbort"
         @reconnect="handleReconnect"
         @load-more="handleLoadMoreHistory"
@@ -185,6 +190,7 @@
 </template>
 
 <script setup lang="ts">
+import {answersForQuestionText} from '../../composables/question-model'
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
@@ -248,6 +254,10 @@ const {
   totalTurns,
   hasMore: hasMoreMessages,
   activePermission,
+  activeQuestion,
+  questionBusy,
+  questionError,
+  answerQuestion,
   resolvePermissionRequest,
   reconnectStream,
   loadMoreHistory,
@@ -311,6 +321,7 @@ const uiRunning = computed(() => {
   return aborting.value
     || sending.value
     || Boolean(activePermission.value)
+    || Boolean(activeQuestion.value)
     || hasStreamingMessage.value
     || hasRunningTool.value
     || hasRunningTask.value
@@ -947,6 +958,12 @@ async function handleSubmit(payload: {
   }
 
   const sessionId = await ensureSession()
+  if(activeQuestion.value){
+    const answers=answersForQuestionText(activeQuestion.value,payload.text)
+    if(!answers || payload.parts?.some(part=>part.type==='file')){ElMessage.info('请在上方问题卡片中完成选择或填写答案');return}
+    if(await answerQuestion(answers))composerDraft.value=''
+    return
+  }
   touchSession(sessionId)
   void autoRenameSessionFromFirstPrompt(sessionId, payload.text)
   composerDraftAttachments.value = []

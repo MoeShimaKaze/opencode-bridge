@@ -22,6 +22,7 @@ import { registerChatSessionsRoutes } from './chat-sessions.js';
 import { registerChatPromptRoutes } from './chat-prompt.js';
 import { registerChatEventsRoutes } from './chat-events.js';
 import { registerChatPermissionRoutes } from './chat-permission.js';
+import { registerChatQuestionRoutes } from './chat-question.js';
 import { registerChatAbortRoutes } from './chat-abort.js';
 import { registerChatMetaRoutes } from './chat-meta.js';
 import { chatEventNormalizer } from '../chat/event-normalizer.js';
@@ -34,5 +35,6 @@ export function registerChatRoutes(app: import('express').Application): void {
   registerChatPromptRoutes(app);
   registerChatEventsRoutes(app);
   registerChatPermissionRoutes(app);
+  registerChatQuestionRoutes(app);
   registerChatAbortRoutes(app);
 }
