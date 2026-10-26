@@ -5,6 +5,10 @@ param(
     [switch]$NoPlatforms
 )
 $ErrorActionPreference='Stop'
+$environmentNames=@('OPENCODE_SERVER_PASSWORD','OPENCODE_SERVER_USERNAME','NATIVE_OPENCODE_URL','BRIDGE_RUNTIME_ROOT','BRIDGE_SOURCE_ROOT','OPENCODE_BRIDGE_CONFIG_DIR','OPENCODE_BRIDGE_DATA_ROOT','OPENCODE_BRIDGE_USER_DATA_ROOT','ADMIN_PORT','ADMIN_HOST','DINGTALK_ENABLED','FEISHU_ENABLED','DISCORD_ENABLED','WECOM_ENABLED','TELEGRAM_ENABLED','QQ_ENABLED','WHATSAPP_ENABLED','WEIXIN_ENABLED','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_CACHE_HOME','XDG_STATE_HOME')
+$previousEnvironment=@{}
+foreach($name in $environmentNames){$previousEnvironment[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
+try {
 $RuntimeRoot=[System.IO.Path]::GetFullPath($RuntimeRoot)
 $SourceRoot=[System.IO.Path]::GetFullPath($SourceRoot)
 New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
@@ -62,3 +66,10 @@ for($attempt=0;$attempt -lt 60;$attempt++){
     Start-Sleep -Milliseconds 500
 }
 throw 'Native Bridge did not become ready within 30 seconds'
+} finally {
+    # The child keeps its own environment; an interactive caller keeps its original OpenCode profile.
+    foreach($name in $environmentNames){
+        if($null -eq $previousEnvironment[$name]){Remove-Item -LiteralPath ('Env:'+$name) -ErrorAction SilentlyContinue}
+        else{[Environment]::SetEnvironmentVariable($name,$previousEnvironment[$name],'Process')}
+    }
+}
