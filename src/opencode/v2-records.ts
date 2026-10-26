@@ -92,7 +92,8 @@ export function toLegacyMessages(sessionId: string, values: unknown[]): Array<{ 
   let parentID: string | undefined;
   for (const value of values) {
     const message = object(value);
-    if (!message || typeof message.id !== 'string' || !['user', 'assistant', 'synthetic', 'system', 'skill'].includes(message.type)) continue;
+    // Legacy chat has no truthful representation for model-facing internal records.
+    if (!message || typeof message.id !== 'string' || !['user', 'assistant'].includes(message.type)) continue;
     const role = message.type === 'assistant' ? 'assistant' : 'user';
     const info: Record<string, any> = { ...message, id: message.id, sessionID: sessionId, role, time: legacyTime(message.time) };
     delete info.content;

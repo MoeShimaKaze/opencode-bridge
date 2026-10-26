@@ -1,4 +1,4 @@
-import { outputBuffer } from '../opencode/output-buffer.js';
+import { applyBufferedContent, outputBuffer } from '../opencode/output-buffer.js';
 import { streamStateManager } from '../store/stream-state.js';
 import { getSenderByPlatform, getCachedAdapter } from '../platform/loader.js';
 import { chatSessionStore } from '../store/chat-session.js';
@@ -88,7 +88,8 @@ export function registerBufferCallback(
   };
 
   outputBuffer.setUpdateCallback(async (buffer) => {
-    const { text, thinking } = outputBuffer.getAndClear(buffer.key);
+    const update = outputBuffer.getAndClear(buffer.key);
+    const { text, thinking } = update;
     const timelineSegments = deps.getTimelineSegments(buffer.key);
     const sessionConversation = deps.resolveSessionConversation(buffer.sessionId);
     const platform = sessionConversation?.platform ?? 'feishu';
@@ -100,6 +101,8 @@ export function registerBufferCallback(
     if (
       !text &&
       !thinking &&
+      update.replaceText === undefined &&
+      update.replaceThinking === undefined &&
       timelineSegments.length === 0 &&
       buffer.tools.length === 0 &&
       !pendingPermission &&
@@ -107,9 +110,7 @@ export function registerBufferCallback(
       buffer.status === 'running'
     ) return;
 
-    const current = streamStateManager.getContent(buffer.key) || { text: '', thinking: '' };
-    current.text += text;
-    current.thinking += thinking;
+    const current = applyBufferedContent(streamStateManager.getContent(buffer.key) || { text: '', thinking: '' }, update);
 
     if (buffer.status !== 'running') {
       if (buffer.finalText) {

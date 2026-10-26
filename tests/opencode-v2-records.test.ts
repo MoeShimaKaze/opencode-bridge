@@ -5,6 +5,17 @@ const created = '2026-10-26T01:00:00.000Z';
 const completed = '2026-10-26T01:00:02.000Z';
 
 describe('native record conversion', () => {
+  it('excludes internal records from user prompts and preserves the real assistant parent', () => {
+    const messages = toLegacyMessages('ses_shared', [
+      { id: 'msg_user', type: 'user', text: 'A real synthetic test prompt', time: { created } },
+      { id: 'msg_system', type: 'system', text: 'Internal instruction body', description: 'Instruction updated', time: { created } },
+      { id: 'msg_synthetic', type: 'synthetic', text: 'Internal automation text', time: { created } },
+      { id: 'msg_skill', type: 'skill', skill: 'skill_demo', name: 'Demo', text: 'Internal skill body', time: { created } },
+      { id: 'msg_shared', type: 'assistant', content: [{ type: 'text', text: 'Visible reply' }], time: { created, completed } },
+    ]);
+    expect(messages.map(message => [message.info.id, message.info.role])).toEqual([['msg_user', 'user'], ['msg_shared', 'assistant']]);
+    expect(messages[1].info.parentID).toBe('msg_user');
+  });
   it('preserves native session identity, directory and defaults while converting timestamps', () => {
     expect(toLegacySession({ id: 'ses_shared', projectID: 'prj_test', title: 'Synthetic session',
       location: { directory: 'C:/synthetic' }, agent: 'build', model: { providerID: 'demo', id: 'model', variant: 'fast' },

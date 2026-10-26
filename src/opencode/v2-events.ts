@@ -73,13 +73,14 @@ export class V2EventMapper {
       const previous = message.parts.get(key);
       if (previous?.ended) return initial;
       const text = phase === 'ended' ? data.text : `${previous?.text ?? ''}${phase === 'delta' ? data.delta : ''}`;
-      const delta = text.startsWith(previous?.text ?? '') ? text.slice((previous?.text ?? '').length) : text;
+      const replace = phase === 'ended' && !text.startsWith(previous?.text ?? '');
+      const delta = replace ? '' : text.slice((previous?.text ?? '').length);
       // Terminal parts need only a replay tombstone, not another retained copy of the transcript.
       remember(message.parts, key, phase === 'ended' ? { ended: true } : { text }, 2048);
-      if (!delta && phase !== 'started') return initial;
+      if (!delta && !replace && phase !== 'started') return initial;
       return [...initial, emit('message.part.updated', {
         part: { id: `${messageID}:${kind}:${data.ordinal}`, sessionID, messageID, type: kind, text },
-        ...(delta ? { delta } : {}),
+        ...(replace ? { replace: true } : delta ? { delta } : {}),
       })];
     }
 

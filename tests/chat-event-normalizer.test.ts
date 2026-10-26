@@ -3,6 +3,12 @@ import { ChatEventBus } from '../src/admin/chat/event-bus.js';
 import { ChatEventNormalizer } from '../src/admin/chat/event-normalizer.js';
 
 describe('ChatEventNormalizer', () => {
+  it.each([[1792976400000, 1792976400000], [1792976400, 1792976400000]])('normalizes native milliseconds and legacy seconds (%s)', (created, expected) => {
+    const bus = new ChatEventBus();
+    const normalizer = new ChatEventNormalizer(bus);
+    (normalizer as any).onMessageUpdated({ id: 'msg_shared', sessionID: 'ses_shared', role: 'assistant', time: { created } });
+    expect(bus.snapshot('ses_shared')[0].event).toMatchObject({ type: 'message_start', msg: { createdAt: expected } });
+  });
   it('不应把用户消息的 text part 增量发布成 assistant 回复，但应同步用户 message_start', () => {
     const bus = new ChatEventBus();
     const normalizer = new ChatEventNormalizer(bus);

@@ -47,6 +47,7 @@ export type ChatEvent =
   | { type: 'message_start'; msg: ChatMessageMeta }
   | { type: 'text_delta'; msgId: string; text: string }
   | { type: 'reasoning_delta'; msgId: string; text: string }
+  | { type: 'text_snapshot' | 'reasoning_snapshot'; msgId: string; text: string }
   | {
       type: 'tool_start';
       msgId: string;
