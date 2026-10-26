@@ -35,9 +35,15 @@ process.env.OPENCODE_BRIDGE_CONFIG_DIR = data;
 const { configStore } = await import('./node_modules/opencode-bridge/dist/store/config-store.js');
 const current = configStore.get();
 configStore.merge({
-  FEISHU_ENABLED: 'false', DISCORD_ENABLED: 'false', WECOM_ENABLED: 'false',
-  TELEGRAM_ENABLED: 'false', QQ_ENABLED: 'false', WHATSAPP_ENABLED: 'false', WEIXIN_ENABLED: 'false',
-  DINGTALK_ENABLED: 'true', ENABLED_PLATFORMS: 'dingtalk',
+  FEISHU_ENABLED: current.FEISHU_ENABLED ?? 'false',
+  DISCORD_ENABLED: current.DISCORD_ENABLED ?? 'false',
+  WECOM_ENABLED: current.WECOM_ENABLED ?? 'false',
+  TELEGRAM_ENABLED: current.TELEGRAM_ENABLED ?? 'false',
+  QQ_ENABLED: current.QQ_ENABLED ?? 'false',
+  WHATSAPP_ENABLED: current.WHATSAPP_ENABLED ?? 'false',
+  WEIXIN_ENABLED: current.WEIXIN_ENABLED ?? 'false',
+  DINGTALK_ENABLED: current.DINGTALK_ENABLED ?? 'true',
+  ENABLED_PLATFORMS: current.ENABLED_PLATFORMS ?? 'dingtalk',
   OPENCODE_HOST: '127.0.0.1', OPENCODE_PORT: '4096', OPENCODE_AUTO_START: 'false',
   OPENCODE_AUTO_START_FOREGROUND: 'false', OPENCODE_SERVER_USERNAME: 'opencode',
   OPENCODE_SERVER_PASSWORD: current.OPENCODE_SERVER_PASSWORD || crypto.randomBytes(32).toString('base64url'),

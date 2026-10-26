@@ -14,7 +14,10 @@ const existing=configStore.get();
 delete existing.OPENCODE_SERVER_PASSWORD;
 configStore.set({...existing,OPENCODE_HOST:url.hostname,OPENCODE_PORT:url.port,OPENCODE_SERVER_USERNAME:'opencode',
   OPENCODE_AUTO_START:'false',OPENCODE_AUTO_START_FOREGROUND:'false',
-  ENABLE_MANUAL_SESSION_BIND:'true',ENABLED_PLATFORMS:'dingtalk',DINGTALK_ENABLED:'true',FEISHU_ENABLED:'false',
+  ENABLE_MANUAL_SESSION_BIND:existing.ENABLE_MANUAL_SESSION_BIND ?? 'true',
+  ENABLED_PLATFORMS:existing.ENABLED_PLATFORMS ?? 'dingtalk',
+  DINGTALK_ENABLED:existing.DINGTALK_ENABLED ?? 'true',
+  FEISHU_ENABLED:existing.FEISHU_ENABLED ?? 'false',
   ADMIN_PORT:process.env.ADMIN_PORT ?? '4098',WEB_ADMIN_DISABLED:'false'});
 configStore.markMigrated();
 fs.writeFileSync(path.join(runtime,'data/.env'),'ADMIN_PORT='+(process.env.ADMIN_PORT ?? '4098')+'\n');

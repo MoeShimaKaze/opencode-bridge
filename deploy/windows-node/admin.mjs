@@ -7,8 +7,8 @@ process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND = `"${powershell}" -NoP -NonI -W H
 if (process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND.length > 260) throw new Error('Startup command exceeds Windows Run length limit');
 process.env.BRIDGE_EMBEDDED_MODE = '1';
 process.env.BRIDGE_SPAWNED_BY_ADMIN = '1';
-// Bridge initializes the Feishu SDK even when that platform is disabled.
-// These inert values satisfy its constructor; FEISHU_ENABLED stays false.
+// These fallback values satisfy the SDK constructor; persisted app credentials
+// are injected by config.js before the adapters are created.
 process.env.FEISHU_APP_ID = 'disabled-unused';
 process.env.FEISHU_APP_SECRET = 'disabled-unused';
 await import('./node_modules/opencode-bridge/dist/config.js');
