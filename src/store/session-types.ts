@@ -6,6 +6,7 @@ export type SessionOrderMode = 'default' | 'last_time';
 export interface ChatSessionData {
   chatId: string;
   sessionId: string;
+  sessionAliases?: Record<string, number>;
   sessionDirectory?: string;
   creatorId: string;
   createdAt: number;

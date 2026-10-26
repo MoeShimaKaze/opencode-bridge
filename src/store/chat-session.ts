@@ -105,6 +105,34 @@ class ChatSessionStore {
     return platforms.size === 1 ? platforms.values().next().value : undefined;
   }
 
+  private getPersistedAlias(sessionId: string): { chatId: string; platform: string; expiresAt: number } | undefined {
+    const now = Date.now();
+    let changed = false;
+    for (const [key, data] of this.data.entries()) {
+      const expiresAt = data.sessionAliases?.[sessionId];
+      if (typeof expiresAt !== 'number') continue;
+      if (expiresAt <= now) {
+        delete data.sessionAliases![sessionId];
+        if (Object.keys(data.sessionAliases!).length === 0) delete data.sessionAliases;
+        changed = true;
+        continue;
+      }
+      const parsed = this.parseConversationKey(key);
+      if (changed) this.save();
+      return parsed ? { chatId: parsed.chatId, platform: parsed.platform, expiresAt }
+        : { chatId: data.chatId, platform: 'feishu', expiresAt };
+    }
+    if (changed) this.save();
+    return undefined;
+  }
+
+  private getActivePersistedAliases(aliases?: Record<string, number>): Record<string, number> {
+    const now = Date.now();
+    return Object.fromEntries(Object.entries(aliases ?? {}).filter(([, expiresAt]) =>
+      typeof expiresAt === 'number' && expiresAt > now
+    ));
+  }
+
   getConversationByChatId(chatId: string): { platform: string; conversationId: string } | null {
     const platform = this.getUniquePlatformForChatId(chatId);
     return platform ? { platform, conversationId: chatId } : null;
@@ -193,6 +221,8 @@ class ChatSessionStore {
         }
       }
     }
+    const persistedAlias = this.getPersistedAlias(sessionId);
+    if (persistedAlias) return { platform: persistedAlias.platform, conversationId: persistedAlias.chatId };
     this.cleanupExpiredSessionAliases();
     const alias = this.sessionAliases.get(sessionId);
     if (alias) {
@@ -248,6 +278,12 @@ class ChatSessionStore {
         }
         return storageKey;
       }
+    }
+
+    const persistedAlias = this.getPersistedAlias(sessionId);
+    if (persistedAlias) {
+      console.log(`[Store] 命中持久化会话别名: session=${sessionId} -> platform=${persistedAlias.platform}`);
+      return persistedAlias.chatId;
     }
 
     const alias = this.sessionAliases.get(sessionId);
@@ -349,10 +385,16 @@ class ChatSessionStore {
           botFeishuMsgIds: Array.isArray(record.botFeishuMsgIds) ? [...record.botFeishuMsgIds] : [],
         }))
       : [];
+    const persistedAliases = this.getActivePersistedAliases(current?.sessionAliases);
+    if (current?.sessionId && current.sessionId !== sessionId) {
+      persistedAliases[current.sessionId] = Date.now() + SESSION_ALIAS_TTL_MS;
+    }
+    delete persistedAliases[sessionId];
 
     const data: ChatSessionData = {
       chatId: conversationId,
       sessionId,
+      ...(Object.keys(persistedAliases).length ? { sessionAliases: persistedAliases } : {}),
       ...(options?.sessionDirectory?.trim() ? { sessionDirectory: options.sessionDirectory.trim() } : {}),
       creatorId,
       createdAt: Date.now(),
@@ -421,10 +463,16 @@ class ChatSessionStore {
           botFeishuMsgIds: Array.isArray(record.botFeishuMsgIds) ? [...record.botFeishuMsgIds] : [],
         }))
       : [];
+    const persistedAliases = this.getActivePersistedAliases(current?.sessionAliases);
+    if (current?.sessionId && current.sessionId !== sessionId) {
+      persistedAliases[current.sessionId] = Date.now() + SESSION_ALIAS_TTL_MS;
+    }
+    delete persistedAliases[sessionId];
 
     const data: ChatSessionData = {
       chatId,
       sessionId,
+      ...(Object.keys(persistedAliases).length ? { sessionAliases: persistedAliases } : {}),
       ...(options?.sessionDirectory?.trim() ? { sessionDirectory: options.sessionDirectory.trim() } : {}),
       creatorId,
       createdAt: Date.now(),
@@ -463,7 +511,11 @@ class ChatSessionStore {
     }
 
     this.cleanupExpiredSessionAliases();
-    const chat = this.getChatDataLegacyOrNamespaced(normalizedChatId);
+    const resolvedPlatform = platform ?? this.getUniquePlatformForChatId(normalizedChatId);
+    const storageKey = resolvedPlatform
+      ? this.makeConversationKey(resolvedPlatform, normalizedChatId)
+      : this.legacyToNamespacedKey(normalizedChatId);
+    const chat = this.data.get(storageKey) ?? this.getChatDataLegacyOrNamespaced(normalizedChatId);
     if (!chat) {
       return;
     }
@@ -473,11 +525,19 @@ class ChatSessionStore {
     }
 
     const safeTtl = Number.isFinite(ttlMs) ? Math.max(60000, Math.floor(ttlMs)) : SESSION_ALIAS_TTL_MS;
+    const expiresAt = Date.now() + safeTtl;
     this.sessionAliases.set(normalizedSessionId, {
       chatId: normalizedChatId,
-      platform: platform ?? this.getUniquePlatformForChatId(normalizedChatId),
-      expiresAt: Date.now() + safeTtl,
+      platform: resolvedPlatform,
+      expiresAt,
     });
+    const persistedAliases = this.getActivePersistedAliases(chat.sessionAliases);
+    const existingExpiry = persistedAliases[normalizedSessionId] ?? 0;
+    if (existingExpiry < expiresAt - Math.floor(safeTtl / 2)) {
+      persistedAliases[normalizedSessionId] = expiresAt;
+      chat.sessionAliases = persistedAliases;
+      this.save();
+    }
     console.log(`[Store] 记录临时会话别名: session=${normalizedSessionId} -> chat=${normalizedChatId}`);
   }
 

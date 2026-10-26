@@ -286,7 +286,8 @@ export class OpenCodeEventHub {
                            permissionInfo.risk === 'medium' ? '⚡ 中等风险' : '✅ 低风险';
           const permissionText = `🔐 OpenCode 权限确认请求\n\n工具名称: ${permissionInfo.tool}\n操作描述: ${permissionInfo.description}\n风险等级: ${riskText}\n\n请回复: 允许 / 拒绝 / 始终允许（或 y / n / always）`;
           sender.sendText(route.conversationId, permissionText).then(messageId => {
-            if (!messageId) console.warn(`[权限] 钉钉权限提醒未发送: permission=${event.permissionId}`);
+            if (messageId) console.log(`[权限] 钉钉权限提醒已发送: permission=${event.permissionId}`);
+            else console.warn(`[权限] 钉钉权限提醒未发送: permission=${event.permissionId}`);
           }).catch(error => {
             console.error(`[权限] 钉钉权限提醒发送失败: permission=${event.permissionId}`, error);
           });
