@@ -369,12 +369,16 @@ const workspaceOptions = computed(() => {
 const visiblePanels = computed(() => panelDefinitions.filter(panel => panel.key !== 'terminal' && openPanels.value.includes(panel.key)))
 const activePreferenceKey = computed(() => activeSessionId.value || DRAFT_PREFERENCE_KEY)
 const activePreference = computed<SessionPreference>(() => {
-  return sessionPreferences.value[activePreferenceKey.value] || {
+  const native = currentSession.value as (typeof currentSession.value & {apiVersion?:string;agent?:string;model?:{providerID:string;id:string;variant?:string}})
+  const defaults = native?.apiVersion === 'v2' ? {
+    providerId:native.model?.providerID,modelId:native.model?.id,variant:native.model?.variant,agentName:native.agent,
+  } : {
     providerId: configStore.settings.DEFAULT_PROVIDER || undefined,
     modelId: configStore.settings.DEFAULT_MODEL || undefined,
     variant: undefined,
     agentName: undefined,
   }
+  return {...defaults,...sessionPreferences.value[activePreferenceKey.value]}
 })
 const currentEffortOptions = computed(() => {
   const model = findModel(activePreference.value.providerId, activePreference.value.modelId)
@@ -413,6 +417,7 @@ let activeResize: { target: ResizeTarget; startX: number; initialWidth: number }
 
 // 当模型目录加载/更新后，重新验证当前选中的 variant 是否仍被新模型支持
 watch(currentEffortOptions, (nextOptions) => {
+  if ((currentSession.value as any)?.apiVersion === 'v2' && !sessionPreferences.value[activePreferenceKey.value]?.variant) return
   const currentVariant = activePreference.value.variant
   if (!currentVariant) return
 
@@ -506,7 +511,7 @@ function findModel(providerId?: string, modelId?: string): { variants: string[] 
 
 function updateActiveModel(providerId?: string, modelId?: string): void {
   const nextPreference: SessionPreference = {
-    ...activePreference.value,
+    ...((currentSession.value as any)?.apiVersion === 'v2' ? sessionPreferences.value[activePreferenceKey.value] : activePreference.value),
     providerId: providerId || undefined,
     modelId: modelId || undefined,
   }
@@ -525,14 +530,14 @@ function updateActiveVariant(variant?: string): void {
   const nextVariant = resolveSupportedVariant(variant, currentEffortOptions.value)
 
   writePreference(activePreferenceKey.value, {
-    ...activePreference.value,
+    ...((currentSession.value as any)?.apiVersion === 'v2' ? sessionPreferences.value[activePreferenceKey.value] : activePreference.value),
     variant: nextVariant,
   })
 }
 
 function updateActiveAgentName(agentName?: string): void {
   writePreference(activePreferenceKey.value, {
-    ...activePreference.value,
+    ...((currentSession.value as any)?.apiVersion === 'v2' ? sessionPreferences.value[activePreferenceKey.value] : activePreference.value),
     agentName: typeof agentName === 'string' && agentName.trim() ? agentName.trim() : undefined,
   })
 }
@@ -719,9 +724,11 @@ async function ensureWorkspaceCatalogLoaded(): Promise<void> {
   await workspaceCatalogPromise
 }
 
+watch(workspaceDirectory, () => { void loadAgents(); void loadModelCatalog() })
+
 async function loadAgents(): Promise<void> {
   try {
-    availableAgents.value = await chatApi.listAgents()
+    availableAgents.value = await chatApi.listAgents(workspaceDirectory.value || undefined)
   } catch (error) {
     ElMessage.warning(error instanceof Error ? error.message : 'Agent 列表加载失败')
   }
@@ -729,7 +736,7 @@ async function loadAgents(): Promise<void> {
 
 async function loadModelCatalog(): Promise<void> {
   try {
-    modelCatalog.value = await chatApi.listModels()
+    modelCatalog.value = await chatApi.listModels(workspaceDirectory.value || undefined)
   } catch (error) {
     modelCatalog.value = []
     ElMessage.warning(error instanceof Error ? error.message : '模型列表加载失败')
@@ -948,10 +955,12 @@ async function handleSubmit(payload: {
     sessionId,
     text: payload.text,
     parts: payload.parts,
-    providerId: payload.providerId,
-    modelId: payload.modelId,
-    variant: payload.variant,
-    agent: payload.agent,
+    ...((currentSession.value as any)?.apiVersion === 'v2' ? {
+      providerId:sessionPreferences.value[sessionId]?.providerId,
+      modelId:sessionPreferences.value[sessionId]?.modelId,
+      variant:sessionPreferences.value[sessionId]?.variant,
+      agent:sessionPreferences.value[sessionId]?.agentName,
+    } : {providerId:payload.providerId,modelId:payload.modelId,variant:payload.variant,agent:payload.agent}),
     directory: workspaceDirectory.value || undefined,
   })
 }

@@ -30,6 +30,8 @@ export interface ChatMessageVm {
   parentId?: string
   text: string
   reasoning: string
+  textAuthoritative?: boolean
+  reasoningAuthoritative?: boolean
   tools: ChatToolCallVm[]
   status: ChatMessageStatus
   usage?: ChatTokenUsage
@@ -167,11 +169,12 @@ export function normalizeHistoryMessage(message: ChatHistoryMessage): ChatMessag
 
   const error = message.info.error?.data?.message
   const assistantDone = message.info.role === 'assistant' && Boolean(message.info.time.completed)
+  const created = message.info.time.created
 
   return {
     id: message.info.id,
     role: message.info.role,
-    createdAt: (message.info.time.created ?? Date.now() / 1000) * 1000,
+    createdAt: typeof created === 'number' && Number.isFinite(created) ? created < 1e12 ? created * 1000 : created : Date.now(),
     parentId: message.info.role === 'assistant' ? message.info.parentID : undefined,
     text: textParts.join(''),
     reasoning: reasoningParts.join(''),
@@ -356,6 +359,20 @@ export function applyChatEvent(messages: ChatMessageVm[], event: ChatEvent): voi
       ensureAssistant(messages, event.msgId).reasoning += event.text
       return
 
+    case 'text_snapshot': {
+      const message = ensureAssistant(messages, event.msgId)
+      message.text = event.text
+      message.textAuthoritative = true
+      return
+    }
+
+    case 'reasoning_snapshot': {
+      const message = ensureAssistant(messages, event.msgId)
+      message.reasoning = event.text
+      message.reasoningAuthoritative = true
+      return
+    }
+
     case 'tool_start': {
       const message = ensureAssistant(messages, event.msgId)
       const tool = ensureTool(message, event.tool.id, event.tool.callId, event.tool.name)
@@ -456,8 +473,8 @@ export function mergeChatMessages(history: ChatMessageVm[], current: ChatMessage
     merged.set(message.id, {
       ...existing,
       ...message,
-      text: message.text.length >= existing.text.length ? message.text : existing.text,
-      reasoning: message.reasoning.length >= existing.reasoning.length ? message.reasoning : existing.reasoning,
+      text: message.textAuthoritative || message.text.length >= existing.text.length ? message.text : existing.text,
+      reasoning: message.reasoningAuthoritative || message.reasoning.length >= existing.reasoning.length ? message.reasoning : existing.reasoning,
       tools: message.tools.length >= existing.tools.length ? message.tools : existing.tools,
       usage: message.usage ?? existing.usage,
       error: message.error ?? existing.error,

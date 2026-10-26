@@ -1,5 +1,17 @@
 import { outputConfig } from '../config.js';
 
+export interface BufferedContentUpdate {
+  text: string;
+  thinking: string;
+  replaceText?: string;
+  replaceThinking?: string;
+}
+
+/** Apply authoritative replacements before fragments that arrived after the snapshot. */
+export function applyBufferedContent(current: { text: string; thinking: string }, update: BufferedContentUpdate): { text: string; thinking: string } {
+  return { text: (update.replaceText ?? current.text) + update.text, thinking: (update.replaceThinking ?? current.thinking) + update.thinking };
+}
+
 // 输出缓冲区（用于聚合输出后定时发送）
 interface BufferedOutput {
   key: string;
@@ -10,6 +22,10 @@ interface BufferedOutput {
   sessionId: string;
   content: string[];
   thinking: string[]; // 存储思考片段
+  textParts: Map<string, string>;
+  thinkingParts: Map<string, string>;
+  replaceText?: string;
+  replaceThinking?: string;
   tools: Array<{
     name: string;
     status: 'pending' | 'running' | 'completed' | 'failed';
@@ -48,6 +64,8 @@ class OutputBuffer {
         sessionId,
         content: [],
         thinking: [],
+        textParts: new Map(),
+        thinkingParts: new Map(),
         tools: [],
         finalText: '',
         finalThinking: '',
@@ -82,6 +100,25 @@ class OutputBuffer {
     buffer.thinking.push(text);
     buffer.dirty = true;
     this.scheduleUpdate(key);
+  }
+
+  trackPart(key: string, type: 'text' | 'reasoning', id: string, text: string): void {
+    const buffer = this.buffers.get(key);
+    if (buffer) (type === 'text' ? buffer.textParts : buffer.thinkingParts).set(id, text);
+  }
+
+  replacePart(key: string, type: 'text' | 'reasoning', id: string, text: string): void {
+    const buffer = this.buffers.get(key);
+    if (!buffer) return;
+    this.trackPart(key, type, id, text);
+    if (type === 'text') {
+      buffer.replaceText = Array.from(buffer.textParts.values()).join('');
+      buffer.content = [];
+    } else {
+      buffer.replaceThinking = Array.from(buffer.thinkingParts.values()).join('');
+      buffer.thinking = [];
+    }
+    this.touch(key);
   }
 
   // 设置正文卡片消息ID
@@ -198,7 +235,7 @@ class OutputBuffer {
   }
 
   // 获取并清空内容
-  getAndClear(key: string): { text: string; thinking: string } {
+  getAndClear(key: string): BufferedContentUpdate {
     const buffer = this.buffers.get(key);
     if (!buffer) return { text: '', thinking: '' };
 
@@ -208,7 +245,12 @@ class OutputBuffer {
     const thinking = buffer.thinking.join('');
     buffer.thinking = [];
     
-    return { text, thinking };
+    const update = { text, thinking,
+      ...(buffer.replaceText !== undefined ? { replaceText: buffer.replaceText } : {}),
+      ...(buffer.replaceThinking !== undefined ? { replaceThinking: buffer.replaceThinking } : {}) };
+    buffer.replaceText = undefined;
+    buffer.replaceThinking = undefined;
+    return update;
   }
 
 

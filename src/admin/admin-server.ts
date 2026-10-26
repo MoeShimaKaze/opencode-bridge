@@ -119,7 +119,7 @@ export function createAdminServer(options: AdminServerOptions): { start: () => P
       // ── 初始化资源系统（skills/mcp/agents/providers 目录与事件总线）
       await initResourceSystem();
 
-      server = app.listen(port, '0.0.0.0', () => {
+      server = app.listen(port, process.env.ADMIN_HOST || '0.0.0.0', () => {
         const interfaces = os.networkInterfaces();
         let lanIp = 'localhost';
         for (const name of Object.keys(interfaces)) {

@@ -1,5 +1,6 @@
 import type { OpencodeClient as SdkOpencodeClient } from '@opencode-ai/sdk';
 import type { PermissionRequestEvent } from './client.js';
+import { getOpenCodeProtocol, subscribeNativeEvents } from './shared-transport.js';
 import {
   type PermissionEventProperties,
   type DirectoryEventStreamEntry,
@@ -106,6 +107,8 @@ export class EventStreamManager {
   // ── directory event stream ─────────────────────────────────────
 
   async ensureDirectoryEventStream(directory: string): Promise<void> {
+    // Native /api/event already covers every location; a second stream duplicates deltas.
+    if (getOpenCodeProtocol() === 'v2') return;
     if (!this.deps.getClient() || !this.eventListeningEnabled) {
       return;
     }
@@ -152,6 +155,7 @@ export class EventStreamManager {
     try {
       const events = await this.deps.getClient()!.event.subscribe({
         query: { directory: normalizedDirectory },
+        signal: controller.signal,
       });
       console.log(`[OpenCode] 目录事件流订阅成功: ${normalizedDirectory}`);
 
@@ -211,7 +215,10 @@ export class EventStreamManager {
     this.eventAbortController = controller;
 
     try {
-      const events = await this.deps.getClient()!.event.subscribe();
+      // The legacy SDK's SSE generator calls global fetch and ignores its configured transport.
+      const events = getOpenCodeProtocol() === 'v2'
+        ? await subscribeNativeEvents(controller.signal)
+        : await this.deps.getClient()!.event.subscribe({ signal: controller.signal });
       console.log('[OpenCode] 事件流订阅成功');
       this.eventReconnectAttempt = 0;
 

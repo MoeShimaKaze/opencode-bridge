@@ -151,6 +151,8 @@ export function useChatMessages(sessionId: Ref<string | null>) {
       case 'message_start':
       case 'text_delta':
       case 'reasoning_delta':
+      case 'text_snapshot':
+      case 'reasoning_snapshot':
       case 'tool_start':
       case 'tool_delta':
         running.value = true

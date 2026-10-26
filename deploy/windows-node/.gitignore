@@ -1,0 +1,10 @@
+node_modules/
+data/
+profile/
+logs/
+processes.json
+.env
+.chat-sessions.json
+.user-sessions.json
+.session-*.json
+autostart-verified.png

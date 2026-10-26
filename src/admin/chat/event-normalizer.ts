@@ -23,6 +23,7 @@ import type { ChatEvent, ChatTodoItem, ChatTokenUsage } from './types.js';
 interface MessagePartUpdatedPayload {
   part: Part;
   delta?: string;
+  replace?: boolean;
 }
 
 interface PermissionRequestPayload {
@@ -70,10 +71,11 @@ function toTokenUsage(info: Message): ChatTokenUsage | undefined {
 }
 
 function toMessageMeta(info: Message): Extract<ChatEvent, { type: 'message_start' }>['msg'] {
+  const created = info.time?.created;
   return {
     id: info.id,
     role: info.role,
-    createdAt: (info.time?.created ?? Math.floor(Date.now() / 1000)) * 1000,
+    createdAt: typeof created === 'number' && Number.isFinite(created) ? created < 1e12 ? created * 1000 : created : Date.now(),
     ...(info.role === 'assistant' && info.parentID ? { parentId: info.parentID } : {}),
     ...(info.role === 'user' && info.model?.providerID && info.model?.modelID
       ? {
@@ -319,7 +321,9 @@ export class ChatEventNormalizer {
           ? payload.delta
           : diffText(prev, part.text ?? '');
         state.textByPartId.set(part.id, part.text ?? '');
-        if (deltaText.length > 0) {
+        if (payload.replace === true) {
+          this.publish(sessionId, { type: 'text_snapshot', msgId, text: Array.from(state.textByPartId.values()).join('') });
+        } else if (deltaText.length > 0) {
           this.publish(sessionId, { type: 'text_delta', msgId, text: deltaText });
         }
         break;
@@ -331,7 +335,9 @@ export class ChatEventNormalizer {
           ? payload.delta
           : diffText(prev, part.text ?? '');
         state.reasoningByPartId.set(part.id, part.text ?? '');
-        if (deltaText.length > 0) {
+        if (payload.replace === true) {
+          this.publish(sessionId, { type: 'reasoning_snapshot', msgId, text: Array.from(state.reasoningByPartId.values()).join('') });
+        } else if (deltaText.length > 0) {
           this.publish(sessionId, { type: 'reasoning_delta', msgId, text: deltaText });
         }
         break;

@@ -22,6 +22,8 @@ export interface StreamAccumulatorDeps {
     getOrCreate(bufferKey: string, conversationId: string, sessionId: string, msgId: string | null): unknown;
     append(bufferKey: string, text: string): void;
     appendThinking(bufferKey: string, text: string): void;
+    trackPart(bufferKey: string, type: 'text' | 'reasoning', id: string, text: string): void;
+    replacePart(bufferKey: string, type: 'text' | 'reasoning', id: string, text: string): void;
     touch(bufferKey: string): void;
   };
   setToolCallCorrelation: (toolCallId: unknown, chatId: unknown) => void;
@@ -94,6 +96,18 @@ export class StreamAccumulator {
     }
 
     chatSessionStore.rememberSessionAlias(sessionID, chatId, CORRELATION_CACHE_TTL_MS);
+
+    if ((part?.type === 'text' || part?.type === 'reasoning') && typeof part.id === 'string' && typeof part.text === 'string') {
+      const key = `${sessionID}:${part.id}`;
+      outputBuffer.trackPart(bufferKey, part.type, key, part.text);
+      if (eventObj.replace === true) {
+        if (part.type === 'text') streamStateManager.setTextSnapshot(key, part.text);
+        else streamStateManager.setReasoningSnapshot(key, part.text);
+        setTimelineText(bufferKey, `${part.type}:${key}`, part.type, part.text);
+        outputBuffer.replacePart(bufferKey, part.type, key, part.text);
+        return;
+      }
+    }
 
     // Tool 处理
     if (part?.type === 'tool' && typeof part === 'object') {

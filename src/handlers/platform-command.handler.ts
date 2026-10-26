@@ -343,8 +343,7 @@ export class PlatformCommandHandler {
 
     const lines = sessions.slice(0, 20).map((session, index) => {
       const title = session.title || '未命名会话';
-      const shortId = session.id.slice(0, 8);
-      return `${index + 1}. ${title} (${shortId})`;
+      return `${index + 1}. ${title}\n/session ${session.id}`;
     });
 
     const header = `📚 会话列表（总计 ${sessions.length}）`;

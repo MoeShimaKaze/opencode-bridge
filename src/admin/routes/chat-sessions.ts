@@ -21,6 +21,7 @@ import { opencodeClient } from '../../opencode/client.js';
 import { chatEventBus } from '../chat/event-bus.js';
 import type { Session } from '@opencode-ai/sdk';
 import { chatAuthMiddleware } from './chat-auth.js';
+import { getOpenCodeProtocol } from '../../opencode/shared-transport.js';
 
 const MESSAGE_PAGE_LIMIT_DEFAULT = 10;
 const MESSAGE_PAGE_LIMIT_MAX = 100;
@@ -125,6 +126,9 @@ function extractLatestTasks(messages: Array<{ parts?: unknown[] }>): Array<{ id:
 }
 
 function toSessionItem(s: Session): {
+  apiVersion?: 'v2';
+  agent?: string;
+  model?: {providerID:string;id:string;variant?:string};
   id: string;
   title: string;
   projectId: string;
@@ -137,6 +141,7 @@ function toSessionItem(s: Session): {
   share?: Session['share'];
 } {
   return {
+    ...(getOpenCodeProtocol() === 'v2' ? {apiVersion:'v2' as const,agent:(s as any).agent,model:(s as any).model} : {}),
     id: s.id,
     title: s.title,
     projectId: s.projectID,

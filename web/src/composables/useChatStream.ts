@@ -7,6 +7,8 @@ const CHAT_EVENT_TYPES = [
   'message_start',
   'text_delta',
   'reasoning_delta',
+  'text_snapshot',
+  'reasoning_snapshot',
   'tool_start',
   'tool_delta',
   'tool_end',
@@ -122,7 +124,7 @@ export function useChatStream(
             state.value = 'idle'
           } else if (event.type === 'session_status' && event.status === 'idle') {
             state.value = 'idle'
-          } else if (event.type === 'message_start' || event.type === 'text_delta') {
+          } else if (event.type === 'message_start' || event.type === 'text_delta' || event.type === 'text_snapshot' || event.type === 'reasoning_snapshot') {
             state.value = 'connected'
           }
           options.onEvent(event)

@@ -80,10 +80,13 @@
         <div class="status-row">
           <span>服务端口：</span>
           <el-tag :type="opencodeStatus?.portOpen ? 'success' : 'danger'">
-            {{ opencodeStatus?.portOpen ? '已启动 (4096)' : '未响应' }}
+            {{ opencodeStatus?.portOpen ? `已连接 (${opencodeStatus.port || 4096})` : '未响应' }}
           </el-tag>
         </div>
-        <div class="status-row">
+        <el-alert v-if="nativeSharedService" type="info" :closable="false" show-icon class="timeout-tip">
+          正在共用原 OpenCode 2 的会话。安装、升级和启停请继续通过原 OpenCode 管理。
+        </el-alert>
+        <div v-if="!nativeSharedService" class="status-row">
           <span>版本检查：</span>
           <template v-if="checkingOpenCodeUpdate">
             <el-text type="info">检查中...</el-text>
@@ -115,7 +118,7 @@
         </div>
 
         <!-- 安装 / 升级 -->
-        <div class="button-row">
+        <div v-if="!nativeSharedService" class="button-row">
           <el-button
             :loading="installingOpenCode"
             :disabled="opencodeStatus?.installed"
@@ -133,7 +136,7 @@
         </div>
 
         <!-- 启动 / 停止 + 前台窗口 -->
-        <div class="button-row" style="margin-top: 8px;">
+        <div v-if="!nativeSharedService" class="button-row" style="margin-top: 8px;">
           <el-button
             v-if="!opencodeStatus?.portOpen"
             type="success"
@@ -160,7 +163,7 @@
             打开前台窗口
           </el-button>
         </div>
-        <div class="field-tip" style="margin-top:6px">
+        <div v-if="!nativeSharedService" class="field-tip" style="margin-top:6px">
           「打开前台窗口」将在新 CMD 窗口中执行 <code>opencode attach http://localhost:4096</code>（Windows 专用）
         </div>
       </div>
@@ -227,7 +230,7 @@
         show-icon
         style="margin-bottom: 16px"
       >
-        终止服务将停止 Bridge 和 OpenCode 所有进程，Web 面板也将无法访问。
+        {{ nativeSharedService ? '关闭后 Bridge 和 Web 面板将停止，原 OpenCode 保持运行。' : '终止服务将停止 Bridge 和 OpenCode 所有进程，Web 面板也将无法访问。' }}
       </el-alert>
       <template #footer>
         <div class="dialog-footer">
@@ -236,7 +239,7 @@
             仅关闭 Bridge
           </el-button>
           <el-button type="danger" @click="handleShutdownAll">
-            终止所有服务
+            {{ nativeSharedService ? '关闭 Bridge 与面板' : '终止所有服务' }}
           </el-button>
         </div>
       </template>
@@ -257,6 +260,7 @@ const store = useConfigStore()
 const status = ref<ServiceStatus | null>(null)
 const bridgeStatus = ref<BridgeStatus | null>(null)
 const opencodeStatus = ref<OpenCodeStatus | null>(null)
+const nativeSharedService = computed(() => opencodeStatus.value?.management === 'external')
 const opencodeUpdateCheck = ref<OpenCodeUpdateCheck | null>(null)
 const bridgeUpdateCheck = ref<{ hasUpdate: boolean; currentVersion: string; latestVersion: string | null } | null>(null)
 

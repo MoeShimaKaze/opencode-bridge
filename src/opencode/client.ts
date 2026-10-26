@@ -12,6 +12,7 @@ import { CommandCacheManager } from './command-cache.js';
 import { ProvidersManager } from './providers.js';
 import { SessionsManager } from './sessions.js';
 import { MessagesManager } from './messages.js';
+import { fetchOpenCode } from './shared-transport.js';
 
 // 权限请求事件类型
 export interface PermissionRequestEvent {
@@ -126,12 +127,13 @@ class OpencodeClientWrapper extends EventEmitter {
       this.client = createOpencodeClient({
         baseUrl: opencodeConfig.baseUrl,
         headers: withOpencodeAuthorizationHeaders(),
+        fetch: fetchOpenCode,
       });
 
       // 通过获取会话列表来检查服务器状态
       const result = await this.client.session.list();
 
-      if (result.error) {
+      if (result.error || !Array.isArray(result.data)) {
         const statusCode = result.response?.status;
         const reason = appendAuthHint(
           statusCode
@@ -222,11 +224,11 @@ class OpencodeClientWrapper extends EventEmitter {
 
   // ── Providers / Config ──────────────────────────────────────────
 
-  async getProviders(): Promise<{
+  async getProviders(options?: SessionQueryOptions): Promise<{
     providers: Array<{ id: string; name: string; models: Array<{ id: string; name: string }> }>;
     default: Record<string, string>;
   }> {
-    return this.providersManager.getProviders();
+    return this.providersManager.getProviders(options);
   }
 
   async getProvidersFull(): Promise<{
@@ -264,8 +266,8 @@ class OpencodeClientWrapper extends EventEmitter {
     return this.providersManager.updateConfig(config);
   }
 
-  async getAgents(): Promise<OpencodeAgentInfo[]> {
-    return this.providersManager.getAgents();
+  async getAgents(options?: SessionQueryOptions): Promise<OpencodeAgentInfo[]> {
+    return this.providersManager.getAgents(options);
   }
 
   // ── Sessions ────────────────────────────────────────────────────
