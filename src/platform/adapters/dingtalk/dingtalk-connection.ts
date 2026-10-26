@@ -80,8 +80,6 @@ export class DingtalkConnection {
   private isReconnecting = false;
   private reconnectAttempts = 0;
   private keepAliveTimer: NodeJS.Timeout | null = null;
-  private activeMessageProcessing = false;
-  private messageProcessingKeepAliveTimer: NodeJS.Timeout | null = null;
 
   constructor(opts: DingtalkConnectionOpts) {
     this.accountId = opts.accountId;
@@ -146,11 +144,6 @@ export class DingtalkConnection {
       this.keepAliveTimer = null;
     }
 
-    if (this.messageProcessingKeepAliveTimer) {
-      clearInterval(this.messageProcessingKeepAliveTimer);
-      this.messageProcessingKeepAliveTimer = null;
-    }
-
     if (this.client?.socket) {
       this.client.socket.removeAllListeners();
     }
@@ -174,16 +167,25 @@ export class DingtalkConnection {
       receivedCount++;
       lastMessageTime = Date.now();
       const messageId = res.headers?.messageId;
+      const receivedAt = new Date().toISOString();
+      const messageLabel = messageId || 'unknown';
+
+      console.log(`[钉钉][${this.accountId}][${receivedAt}] 收到消息回调: messageId=${messageLabel}, topic=${res.headers?.topic || TOPIC_ROBOT}`);
 
       // 立即确认回调
       if (messageId) {
-        this.client.socketCallBackResponse(messageId, { success: true });
+        try {
+          this.client.socketCallBackResponse(messageId, { success: true });
+          console.log(`[钉钉][${this.accountId}][${new Date().toISOString()}] 已发送消息确认: messageId=${messageLabel}`);
+        } catch (error: any) {
+          console.error(`[钉钉][${this.accountId}][${new Date().toISOString()}] 消息确认失败: messageId=${messageLabel}, error=${error?.message || String(error)}`);
+        }
       }
 
       // 消息去重
       if (messageId && isMessageProcessed(messageId)) {
         processedCount++;
-        console.log(`[钉钉][${this.accountId}] 收到重复消息: ${messageId}`);
+        console.log(`[钉钉][${this.accountId}][${new Date().toISOString()}] 跳过重复消息: messageId=${messageLabel}`);
         return;
       }
 
@@ -191,14 +193,13 @@ export class DingtalkConnection {
         markMessageProcessed(messageId);
       }
 
-      // 标记消息处理开始
-      this.markMessageProcessingStart();
-
+      const processingStartedAt = Date.now();
+      let processingResult: 'success' | 'error' = 'success';
       try {
         // 解析消息数据
         const data = JSON.parse(res.data) as DingtalkRawMessage;
 
-        console.log(`[钉钉][${this.accountId}] 收到消息: 类型=${data.msgtype}, 发送者=${data.senderNick || data.senderId}`);
+        console.log(`[钉钉][${this.accountId}][${new Date().toISOString()}] 开始处理消息: messageId=${messageLabel}, msgId=${data.msgId || 'unknown'}, 类型=${data.msgtype || 'unknown'}`);
 
         await this.messageHandler({
           accountId: this.accountId,
@@ -208,10 +209,12 @@ export class DingtalkConnection {
 
         processedCount++;
       } catch (error: any) {
+        processingResult = 'error';
         processedCount++;
-        console.error(`[钉钉][${this.accountId}] 消息处理错误:`, error.message);
+        console.error(`[钉钉][${this.accountId}][${new Date().toISOString()}] 消息处理错误: messageId=${messageLabel}, error=${error?.message || String(error)}`);
       } finally {
-        this.markMessageProcessingEnd();
+        const durationMs = Date.now() - processingStartedAt;
+        console.log(`[钉钉][${this.accountId}][${new Date().toISOString()}] 消息处理完成: messageId=${messageLabel}, result=${processingResult}, durationMs=${durationMs}`);
       }
     });
 
@@ -311,7 +314,6 @@ export class DingtalkConnection {
         // 发送 ping
         try {
           this.client?.socket?.ping();
-          this.lastSocketAvailableTime = Date.now();
         } catch (err: any) {
           console.warn(`[钉钉][${this.accountId}] Ping 失败:`, err.message);
         }
@@ -359,38 +361,6 @@ export class DingtalkConnection {
     } finally {
       this.isReconnecting = false;
     }
-  }
-
-  /**
-   * 标记消息处理开始
-   */
-  private markMessageProcessingStart(): void {
-    this.activeMessageProcessing = true;
-    this.lastSocketAvailableTime = Date.now();
-
-    if (this.messageProcessingKeepAliveTimer) {
-      clearInterval(this.messageProcessingKeepAliveTimer);
-    }
-
-    this.messageProcessingKeepAliveTimer = setInterval(() => {
-      if (this.activeMessageProcessing) {
-        this.lastSocketAvailableTime = Date.now();
-      }
-    }, 30 * 1000);
-  }
-
-  /**
-   * 标记消息处理结束
-   */
-  private markMessageProcessingEnd(): void {
-    this.activeMessageProcessing = false;
-
-    if (this.messageProcessingKeepAliveTimer) {
-      clearInterval(this.messageProcessingKeepAliveTimer);
-      this.messageProcessingKeepAliveTimer = null;
-    }
-
-    this.lastSocketAvailableTime = Date.now();
   }
 
   /**
