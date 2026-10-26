@@ -16,6 +16,7 @@ import type { PlatformSender } from '../platform/types.js';
 import { isChatModelAllowed, parseChatModelReference } from '../utils/chat-model-whitelist.js';
 import { EFFORT_USAGE_TEXT, EFFORT_DISPLAY_ORDER, type ProviderModelMeta, type EffortSupportInfo } from './command-types.js';
 import { formatOpenCodeMCPStatus, getOpenCodeMCPStatus } from '../opencode/mcp-status.js';
+import { runOpenCodePluginCommand } from '../opencode/plugin-command.js';
 
 /**
  * 多平台命令处理器
@@ -52,6 +53,10 @@ export class PlatformCommandHandler {
 
         case 'mcp':
           await this.handleMCPStatus(chatId, sender);
+          break;
+
+        case 'plugin':
+          await this.sendText(sender, chatId, await runOpenCodePluginCommand(command.pluginArgs || ''));
           break;
 
         case 'session':
@@ -172,6 +177,7 @@ export class PlatformCommandHandler {
 • \`/project list\` 列出可用项目
 • \`/status\` 查看当前状态
 • \`/mcp\` 查看当前会话工作目录下的 MCP 连接状态
+• \`/plugin list|add|remove|check|update\` 管理 OpenCode 插件
 • \`/clear\` 重置对话上下文
 
 💡 **提示**

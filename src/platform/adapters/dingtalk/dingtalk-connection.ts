@@ -3,7 +3,7 @@
  *
  * 职责：
  * - 管理单个钉钉账号的 WebSocket 连接
- * - 实现应用层心跳检测
+ * - 使用 SDK 原生心跳检测
  * - 处理连接重连逻辑，带指数退避
  * - 消息去重
  *
@@ -11,7 +11,7 @@
  */
 
 import type { DingtalkConfig, DingtalkRawMessage, DingtalkCallbackData } from './dingtalk-types.js';
-import { HEARTBEAT_INTERVAL, TIMEOUT_THRESHOLD, BACKOFF_BASE_MS, BACKOFF_MAX_MS } from './dingtalk-types.js';
+import { BACKOFF_BASE_MS, BACKOFF_MAX_MS } from './dingtalk-types.js';
 
 // ──────────────────────────────────────────────
 // 消息处理器类型
@@ -75,11 +75,10 @@ export class DingtalkConnection {
   private client: any = null;
   private topicRobot: string | undefined;
   private isStopped = false;
-  private lastSocketAvailableTime = Date.now();
-  private connectionEstablishedTime = Date.now();
   private isReconnecting = false;
   private reconnectAttempts = 0;
-  private keepAliveTimer: NodeJS.Timeout | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private observedSocket: any = null;
 
   constructor(opts: DingtalkConnectionOpts) {
     this.accountId = opts.accountId;
@@ -123,7 +122,7 @@ export class DingtalkConnection {
       debug: this.config.debug,
       endpoint: this.config.endpoint || 'https://api.dingtalk.com',
       autoReconnect: false, // 使用自定义重连
-      keepAlive: false, // 使用自定义心跳
+      keepAlive: true, // 使用 SDK 心跳，兼容 DingTalk 的 SYSTEM/KEEPALIVE 与 WebSocket pong
     } as any);
 
     // 设置事件监听
@@ -139,14 +138,17 @@ export class DingtalkConnection {
   stop(): void {
     this.isStopped = true;
 
-    if (this.keepAliveTimer) {
-      clearInterval(this.keepAliveTimer);
-      this.keepAliveTimer = null;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
+
+    this.client?.disconnect();
 
     if (this.client?.socket) {
       this.client.socket.removeAllListeners();
     }
+    this.observedSocket = null;
 
     console.log(`[钉钉][${this.accountId}] 连接已停止`);
   }
@@ -158,14 +160,12 @@ export class DingtalkConnection {
     const TOPIC_ROBOT = this.topicRobot || 'dingtalk.robotoam.message';
     let receivedCount = 0;
     let processedCount = 0;
-    let lastMessageTime = Date.now();
 
     console.log(`[钉钉][${this.accountId}] 注册消息回调，主题: ${TOPIC_ROBOT}`);
 
     // 注册消息回调
     this.client.registerCallbackListener(TOPIC_ROBOT, async (res: DingtalkCallbackData) => {
       receivedCount++;
-      lastMessageTime = Date.now();
       const messageId = res.headers?.messageId;
       const receivedAt = new Date().toISOString();
       const messageLabel = messageId || 'unknown';
@@ -221,13 +221,12 @@ export class DingtalkConnection {
     // 连接
     try {
       await this.client.connect();
-      this.connectionEstablishedTime = Date.now();
-      this.lastSocketAvailableTime = Date.now();
+      if (!this.client.connected) {
+        throw new Error('钉钉 Stream SDK 未能建立 WebSocket 连接');
+      }
+      this.attachSocketListeners();
 
       console.log(`[钉钉][${this.accountId}] 连接成功`);
-
-      // 启动心跳
-      this.startKeepAlive();
     } catch (error: any) {
       this.handleConnectionError(error);
       throw error;
@@ -238,107 +237,69 @@ export class DingtalkConnection {
    * 设置事件监听器
    */
   private setupEventListeners(): void {
-    // pong 响应
-    this.client.socket?.on('pong', () => {
-      this.lastSocketAvailableTime = Date.now();
+    this.client.on('error', (err: Error) => {
+      console.error(`[钉钉][${this.accountId}] 连接错误:`, err.message);
     });
+  }
 
-    // disconnect 消息
-    this.client.socket?.on('message', (data: any) => {
+  /** SDK 在 connect() 内才创建 socket，必须在连接建立后绑定 socket 事件。 */
+  private attachSocketListeners(): void {
+    const socket = this.client?.socket;
+    if (!socket || this.observedSocket === socket) return;
+    this.observedSocket = socket;
+
+    socket.on('message', (data: any) => {
       try {
         const msg = JSON.parse(data);
         if (msg.type === 'SYSTEM' && msg.headers?.topic === 'disconnect') {
-          if (!this.isStopped && !this.isReconnecting) {
-            this.doReconnect(true).catch(err => {
-              console.error(`[钉钉][${this.accountId}] 重连失败:`, err.message);
-            });
-          }
+          this.scheduleReconnect(true);
         }
       } catch {
         // ignore
       }
     });
 
-    // close 事件
-    this.client.socket?.on('close', (code: number, reason: string) => {
-      console.log(`[钉钉][${this.accountId}] WebSocket 已关闭: code=${code}, reason=${reason}`);
-
-      if (this.isStopped) return;
-
-      setTimeout(() => {
-        this.doReconnect(true).catch(err => {
-          console.error(`[钉钉][${this.accountId}] 重连失败:`, err.message);
-        });
-      }, 0);
+    socket.on('close', (code: number, reason: Buffer) => {
+      console.log(`[钉钉][${this.accountId}] WebSocket 已关闭: code=${code}, reason=${reason?.toString() || ''}`);
+      if (this.observedSocket === socket) this.observedSocket = null;
+      this.scheduleReconnect(true);
     });
 
-    // error 事件
-    this.client.on('error', (err: Error) => {
-      console.error(`[钉钉][${this.accountId}] 连接错误:`, err.message);
+    socket.on('error', (err: Error) => {
+      console.error(`[钉钉][${this.accountId}] WebSocket 错误:`, err.message);
     });
   }
 
-  /**
-   * 启动心跳检测
-   */
-  private startKeepAlive(): void {
-    this.keepAliveTimer = setInterval(async () => {
-      if (this.isStopped) {
-        if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
-        return;
-      }
+  private scheduleReconnect(immediate = false): void {
+    if (this.isStopped || this.isReconnecting || this.reconnectTimer) return;
 
-      try {
-        const elapsed = Date.now() - this.lastSocketAvailableTime;
+    const delay = immediate || this.reconnectAttempts === 0
+      ? 0
+      : Math.min(
+        BACKOFF_BASE_MS * Math.pow(2, this.reconnectAttempts - 1) + Math.random() * 1000,
+        BACKOFF_MAX_MS
+      );
+    if (delay > 0) {
+      console.log(`[钉钉][${this.accountId}] 等待 ${Math.round(delay / 1000)} 秒后重连 (第 ${this.reconnectAttempts + 1} 次)`);
+    }
 
-        // 超时检测
-        if (elapsed > TIMEOUT_THRESHOLD) {
-          console.log(`[钉钉][${this.accountId}] 检测到超时，正在重连...`);
-          await this.doReconnect();
-          return;
-        }
-
-        // 检查 socket 状态
-        const socketState = this.client?.socket?.readyState;
-        const timeSinceConnection = Date.now() - this.connectionEstablishedTime;
-
-        // 15 秒宽限期
-        if (socketState !== 1) {
-          if (timeSinceConnection < 15_000) return;
-
-          console.log(`[钉钉][${this.accountId}] Socket 状态=${socketState}，正在重连...`);
-          await this.doReconnect(true);
-          return;
-        }
-
-        // 发送 ping
-        try {
-          this.client?.socket?.ping();
-        } catch (err: any) {
-          console.warn(`[钉钉][${this.accountId}] Ping 失败:`, err.message);
-        }
-      } catch (err: any) {
-        console.error(`[钉钉][${this.accountId}] 心跳检测错误:`, err.message);
-      }
-    }, HEARTBEAT_INTERVAL);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.doReconnect().catch(err => {
+        console.error(`[钉钉][${this.accountId}] 重连失败:`, err.message);
+        this.scheduleReconnect();
+      });
+    }, delay);
+    this.reconnectTimer.unref?.();
   }
 
   /**
    * 执行重连
    */
-  private async doReconnect(immediate = false): Promise<void> {
+  private async doReconnect(): Promise<void> {
     if (this.isReconnecting || this.isStopped) return;
 
     this.isReconnecting = true;
-
-    if (!immediate && this.reconnectAttempts > 0) {
-      const delay = Math.min(
-        BACKOFF_BASE_MS * Math.pow(2, this.reconnectAttempts - 1) + Math.random() * 1000,
-        BACKOFF_MAX_MS
-      );
-      console.log(`[钉钉][${this.accountId}] 等待 ${Math.round(delay / 1000)} 秒后重连 (第 ${this.reconnectAttempts + 1} 次)`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
 
     try {
       // 断开旧连接
@@ -348,9 +309,10 @@ export class DingtalkConnection {
 
       // 重新连接
       await this.client.connect();
-
-      this.lastSocketAvailableTime = Date.now();
-      this.connectionEstablishedTime = Date.now();
+      if (!this.client.connected) {
+        throw new Error('钉钉 Stream SDK 未能建立 WebSocket 连接');
+      }
+      this.attachSocketListeners();
       this.reconnectAttempts = 0;
 
       console.log(`[钉钉][${this.accountId}] 重连成功`);

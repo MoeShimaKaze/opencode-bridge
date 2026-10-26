@@ -33,6 +33,7 @@ import { parseCronIntentWithOpenCode } from '../reliability/cron-semantic.js';
 import { cleanupRuntimeCronJobsBySessionId, scanAndCleanupOrphanRuntimeCronJobs } from '../reliability/runtime-cron.js';
 import { isChatModelAllowed, parseChatModelReference } from '../utils/chat-model-whitelist.js';
 import { formatOpenCodeMCPStatus, getOpenCodeMCPStatus } from '../opencode/mcp-status.js';
+import { runOpenCodePluginCommand } from '../opencode/plugin-command.js';
 
 import {
   type ProviderModelMeta,
@@ -996,6 +997,10 @@ export class CommandHandler {
 
         case 'mcp':
           await this.handleMCPStatus(chatId, messageId);
+          break;
+
+        case 'plugin':
+          await feishuClient.reply(messageId, await runOpenCodePluginCommand(command.pluginArgs || ''));
           break;
 
         case 'session':

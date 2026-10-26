@@ -10,6 +10,7 @@ import { decodeWeixinChatId } from '../platform/adapters/weixin/weixin-ids.js';
 import { configStore } from '../store/config-store.js';
 import { modelConfig, attachmentConfig } from '../config.js';
 import { opencodeClient } from '../opencode/client.js';
+import { runOpenCodePluginCommand } from '../opencode/plugin-command.js';
 import { preprocessVisionParts, type VisionPart } from '../services/vision-ocr.js';
 import { outputBuffer } from '../opencode/output-buffer.js';
 import { chatSessionStore } from '../store/chat-session.js';
@@ -444,6 +445,10 @@ export class WeixinHandler {
           await sender.sendText(conversationId, `🤖 **OpenCode 状态**\n\n${status}`);
           break;
         }
+
+        case 'plugin':
+          await sender.sendText(conversationId, await runOpenCodePluginCommand(command.pluginArgs || ''));
+          break;
 
         case 'session':
           if (command.sessionAction === 'new') {

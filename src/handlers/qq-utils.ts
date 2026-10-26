@@ -148,6 +148,7 @@ export function getQQHelpText(): string {
 /config output onlyText false - 恢复 QQ Markdown 输出
 /clear - 清空对话上下文
 /stop - 停止当前生成
+/plugin list|add|remove|check|update - 管理 OpenCode 插件
 /help - 显示此帮助
 
 权限确认
@@ -189,6 +190,7 @@ export function getQQHelpMarkdown(): string {
     `${buildQQCmdInput('/config output onlyText false')} - 恢复 QQ Markdown 输出`,
     `${buildQQCmdInput('/clear')} - 清空对话上下文`,
     `${buildQQCmdInput('/stop')} - 停止当前生成`,
+    `${buildQQCmdInput('/plugin list')} - 管理 OpenCode 插件（add/remove/check/update）`,
     `${buildQQCmdInput('/help')} - 显示此帮助`,
   ];
 

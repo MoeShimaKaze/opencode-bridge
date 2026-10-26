@@ -9,6 +9,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { modelConfig, attachmentConfig } from '../config.js';
 import { opencodeClient } from '../opencode/client.js';
+import { runOpenCodePluginCommand } from '../opencode/plugin-command.js';
 import { preprocessVisionParts, type VisionPart } from '../services/vision-ocr.js';
 import { outputBuffer } from '../opencode/output-buffer.js';
 import { chatSessionStore } from '../store/chat-session.js';
@@ -103,6 +104,7 @@ export class WeComHandler {
 /stop - 停止当前生成
 /undo - 撤回上一轮对话
 /compact - 压缩上下文
+/plugin list|add|remove|check|update - 管理 OpenCode 插件
 /rename <名称> - 重命名会话
 /clear - 清空对话上下文
 
@@ -142,6 +144,11 @@ export class WeComHandler {
           `工作目录: ${session.resolvedDirectory || '默认'}`,
         ];
         await sender.sendText(chatId, lines.join('\n'));
+        break;
+      }
+
+      case 'plugin': {
+        await sender.sendText(chatId, await runOpenCodePluginCommand(command.pluginArgs || ''));
         break;
       }
 

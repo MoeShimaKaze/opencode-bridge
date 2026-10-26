@@ -7,6 +7,7 @@
 
 import { modelConfig, attachmentConfig } from '../config.js';
 import { opencodeClient } from '../opencode/client.js';
+import { runOpenCodePluginCommand } from '../opencode/plugin-command.js';
 import { preprocessVisionParts, type VisionPart } from '../services/vision-ocr.js';
 import { outputBuffer } from '../opencode/output-buffer.js';
 import { chatSessionStore, type SessionOrderMode } from '../store/chat-session.js';
@@ -511,6 +512,10 @@ export class QQHandler {
         await sender.sendText(chatId, `OpenCode 状态\n\n${status}`);
         break;
       }
+
+      case 'plugin':
+        await sender.sendText(chatId, await runOpenCodePluginCommand(command.pluginArgs || ''));
+        break;
 
       case 'session':
       case 'sessions':

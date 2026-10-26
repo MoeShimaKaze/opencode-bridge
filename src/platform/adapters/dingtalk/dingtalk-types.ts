@@ -14,12 +14,6 @@ export const DINGTALK_API = 'https://api.dingtalk.com';
 /** 消息去重最大数量 */
 export const DEDUP_MAX = 500;
 
-/** 心跳间隔（毫秒） */
-export const HEARTBEAT_INTERVAL = 10 * 1000;
-
-/** 超时阈值（毫秒） */
-export const TIMEOUT_THRESHOLD = 20 * 1000;
-
 /** 重连退避基数（毫秒） */
 export const BACKOFF_BASE_MS = 2_000;
 

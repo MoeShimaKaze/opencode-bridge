@@ -10,6 +10,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { modelConfig, attachmentConfig } from '../config.js';
 import { opencodeClient } from '../opencode/client.js';
+import { runOpenCodePluginCommand } from '../opencode/plugin-command.js';
 import { preprocessVisionParts, type VisionPart } from '../services/vision-ocr.js';
 import { outputBuffer } from '../opencode/output-buffer.js';
 import { chatSessionStore } from '../store/chat-session.js';
@@ -753,6 +754,10 @@ export class TelegramHandler {
           break;
         }
 
+        case 'plugin':
+          await sender.sendText(chatId, await runOpenCodePluginCommand(command.pluginArgs || ''));
+          break;
+
         case 'session':
           if (command.sessionAction === 'new') {
             await this.handleNewSession(chatId, senderId, chatType || 'p2p', command.sessionDirectory, command.sessionName, sender);
@@ -873,6 +878,8 @@ export class TelegramHandler {
 • \`/project list\` 列出可用项目
 • \`/project default set <路径或别名>\` 设置群默认项目
 • \`/project default clear\` 清除群默认项目
+
+• \`/plugin list|add|remove|check|update\` 管理 OpenCode 插件
 
 💡 **提示**
 • 切换的模型/角色仅对当前会话生效

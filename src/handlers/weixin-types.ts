@@ -27,6 +27,8 @@ export const WEIXIN_HELP_TEXT = `📖 **微信 × OpenCode 机器人指南**
 \`/stop\` - 停止当前生成
 \`/help\` - 显示此帮助
 
+/plugin list|add|remove|check|update - 管理 OpenCode 插件
+
 **权限确认**
 当 AI 需要执行敏感操作时，会回复一条带按钮的消息。
 点击 ✅ 允许 或 ❌ 拒绝 即可快速确认。`;

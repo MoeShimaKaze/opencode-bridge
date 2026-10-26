@@ -19,6 +19,7 @@ import * as path from 'path';
 import { groupConfig, modelConfig } from '../config.js';
 import { KNOWN_EFFORT_LEVELS, normalizeEffortLevel, stripPromptEffortPrefix, type EffortLevel } from '../commands/effort.js';
 import { opencodeClient } from '../opencode/client.js';
+import { runOpenCodePluginCommand } from '../opencode/plugin-command.js';
 import { outputBuffer } from '../opencode/output-buffer.js';
 import { parseQuestionAnswerText } from '../opencode/question-parser.js';
 import { questionHandler, type PendingQuestion } from '../opencode/question-handler.js';
@@ -1464,6 +1465,7 @@ class DiscordHandler {
       '- `///undo`: 回撤上一轮',
       '- `///compact` 或 `///compat`: 压缩上下文',
       '- `///send <绝对路径>`: 发送白名单文件到当前频道',
+      '- `///plugin list|add|remove|check|update`: 管理 OpenCode 插件',
       '- `///restart opencode`: 重启本地 OpenCode 进程（仅 loopback）',
       '- `///stop`: 停止当前频道会话',
       '- `///clear`: 清理并解绑当前会话',
@@ -1507,6 +1509,16 @@ class DiscordHandler {
   private async handleCommand(event: PlatformMessageEvent, command: DiscordCommand): Promise<boolean> {
     if (command.name === 'help') {
       await this.safeReply(event, this.getDiscordHelpText());
+      return true;
+    }
+
+    if (command.name === 'plugin') {
+      try {
+        await this.safeReply(event, await runOpenCodePluginCommand(command.args));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.safeReply(event, `❌ ${message}`);
+      }
       return true;
     }
 
