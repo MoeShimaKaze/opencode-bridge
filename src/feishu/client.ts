@@ -44,16 +44,20 @@ class FeishuClient extends EventEmitter {
 
   constructor() {
     super();
-    this.client = new lark.Client({
+    this.client = this.createApiClient();
+
+    // 创建事件分发器
+    this.eventDispatcher = this.createEventDispatcher();
+  }
+
+  private createApiClient(): lark.Client {
+    return new lark.Client({
       appId: feishuConfig.appId,
       appSecret: feishuConfig.appSecret,
       disableTokenCache: false,
       // 仅输出 error 及以上级别日志，避免未配置时输出大量 warn
       loggerLevel: lark.LoggerLevel.error,
     });
-
-    // 创建事件分发器
-    this.eventDispatcher = this.createEventDispatcher();
   }
 
   private createEventDispatcher(): lark.EventDispatcher {
@@ -155,6 +159,10 @@ class FeishuClient extends EventEmitter {
   async start(): Promise<void> {
     console.log('[飞书] 正在启动长连接...');
     this.connectionState = 'connecting';
+
+    // Bridge 可在进程内重启适配器；每次启动都读取最新配置，避免复用旧凭据。
+    this.client = this.createApiClient();
+    this.eventDispatcher = this.createEventDispatcher();
 
     // 注册消息接收事件
     this.eventDispatcher.register({

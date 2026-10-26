@@ -11,7 +11,7 @@
 1. 创建飞书自建应用
 2. 配置事件订阅
 3. 配置应用权限
-4. 配置加密设置
+4. （可选）配置加密设置
 5. 在 Bridge 中填写配置参数
 
 ---
@@ -20,7 +20,7 @@
 
 建议使用长连接模式（WebSocket 事件）。
 
-### 2.1 必需事件
+### 2.1 必需事件订阅
 
 | 事件 | 必需 | 用途 |
 |------|------|------|
@@ -28,13 +28,18 @@
 | `im.message.recalled_v1` | ✅ | 用户撤回触发 `/undo` 回滚 |
 | `im.chat.member.user.deleted_v1` | ✅ | 成员退群后触发生命周期清理 |
 | `im.chat.disbanded_v1` | ✅ | 群解散后清理本地会话映射 |
-| `card.action.trigger_v1` | ✅ | 处理控制面板、权限确认、提问卡片回调 |
 
 ### 2.2 可选事件
 
 | 事件 | 必需 | 用途 |
 |------|------|------|
 | `im.message.message_read_v1` | ❌ | 已读回执兼容 |
+
+### 2.3 卡片回调
+
+卡片回调不是上表中的长连接事件订阅。在飞书开放平台的“添加回调”窗口中，进入“卡片”分类并选择新版 **卡片回传交互**，事件名称为 `card.action.trigger`。Bridge 当前监听的就是这个事件，用于处理控制面板、权限确认和提问卡片交互。
+
+不要选择“消息卡片回传交互（旧）”(`card.action.trigger_v1`)；Bridge 未注册这个旧版事件。
 
 ---
 
@@ -87,8 +92,8 @@
 
 1. 在应用设置中找到"事件订阅"
 2. 建议使用"长连接"模式（WebSocket）
-3. 添加上述必需事件
-4. 记录 **Verification Token**
+3. 在事件订阅中添加上述必需事件
+4. 在“添加回调”中按 2.3 选择新版卡片回调 `card.action.trigger`
 
 ### 步骤 3：配置权限
 
@@ -97,11 +102,9 @@
 3. 或使用上方 JSON 批量导入
 4. 发布应用使权限生效
 
-### 步骤 4：配置加密
+### 步骤 4：（可选）配置加密
 
-1. 在应用设置中找到"加密"配置
-2. 设置加密密钥
-3. 记录 **Encrypt Key** 和 **Verification Token**
+长连接模式通过 WebSocket 接收事件，不需要配置 Encrypt Key 或 Verification Token。只有改用需要校验/解密的 webhook 回调方式时，才需要设置并填写这些值。
 
 ### 步骤 5：发布应用
 
@@ -120,8 +123,8 @@
 | `FEISHU_ENABLED` | ✅ | 设置为 `true` 启用飞书 |
 | `FEISHU_APP_ID` | ✅ | 飞书应用 App ID |
 | `FEISHU_APP_SECRET` | ✅ | 飞书应用 App Secret |
-| `FEISHU_ENCRYPT_KEY` | ✅ | 飞书 Encrypt Key |
-| `FEISHU_VERIFICATION_TOKEN` | ✅ | 飞书 Verification Token |
+| `FEISHU_ENCRYPT_KEY` | ❌ | 使用 webhook 回调并启用加密时填写；长连接模式可留空 |
+| `FEISHU_VERIFICATION_TOKEN` | ❌ | 使用 webhook 回调校验时填写；长连接模式可留空 |
 
 ---
 
@@ -154,8 +157,8 @@
 
 ### 卡片操作不生效
 
-1. 检查 `card.action.trigger_v1` 事件是否订阅
-2. 检查卡片回调 URL 是否可访问
+1. 检查“添加回调”中是否已选择新版 `card.action.trigger`
+2. 确认没有误选旧版 `card.action.trigger_v1`
 3. 查看 Bridge 服务日志
 
 ### 加密/解密失败
