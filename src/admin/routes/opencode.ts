@@ -20,8 +20,8 @@ export interface OpencodeRoutesOptions {
 export function createOpencodeRoutes(options: OpencodeRoutesOptions): express.Router {
   const router = express.Router();
   const { version } = options;
-  router.use((req,res,next)=>{
-    if(isSharedNativeService() && req.method==='POST' && ['/install','/upgrade','/start','/stop','/attach'].includes(req.path)){
+  router.post(['/install','/upgrade','/start','/stop','/attach'],(_req,res,next)=>{
+    if(isSharedNativeService()){
       res.status(409).json({error:'当前共用原 OpenCode 服务，请通过原 OpenCode 管理安装、升级和启停。'});
       return;
     }

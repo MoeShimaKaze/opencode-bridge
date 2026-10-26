@@ -25,7 +25,7 @@ it('reports the actual shared service version and port without invoking a CLI',a
   expect(await (await fetch(base+'/status')).json()).toMatchObject({installed:true,version:'2.0.24',port:49374,portOpen:true,management:'external',apiVersion:'v2'});
   expect(mocks.exec).not.toHaveBeenCalled();
 });
-it.each(['install','upgrade','start','stop','attach'])('keeps the shared service outside the legacy %s process manager',async action=>{
+it.each(['install','upgrade','start','stop','attach'].flatMap(action=>[action,action+'/',action.toUpperCase()]))('keeps the shared service outside the legacy %s process manager',async action=>{
   expect((await fetch(base+'/'+action,{method:'POST'})).status).toBe(409);
   expect(mocks.exec).not.toHaveBeenCalled();expect(mocks.spawn).not.toHaveBeenCalled();
 });
