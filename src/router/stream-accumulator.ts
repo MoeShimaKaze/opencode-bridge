@@ -15,7 +15,7 @@ export interface StreamAccumulatorDeps {
   toSessionId: (value: unknown) => string;
   chatSessionStore: {
     getChatId(sessionId: string): string | undefined;
-    rememberSessionAlias(sessionId: string, chatId: string, ttl: number): void;
+  rememberSessionAlias(sessionId: string, chatId: string, ttl: number, platform?: string): void;
   };
   outputBuffer: {
     get(bufferKey: string): unknown;
@@ -95,7 +95,7 @@ export class StreamAccumulator {
       outputBuffer.getOrCreate(bufferKey, route.conversationId, sessionID, null);
     }
 
-    chatSessionStore.rememberSessionAlias(sessionID, chatId, CORRELATION_CACHE_TTL_MS);
+    chatSessionStore.rememberSessionAlias(sessionID, chatId, CORRELATION_CACHE_TTL_MS, route.platform);
 
     if ((part?.type === 'text' || part?.type === 'reasoning') && typeof part.id === 'string' && typeof part.text === 'string') {
       const key = `${sessionID}:${part.id}`;

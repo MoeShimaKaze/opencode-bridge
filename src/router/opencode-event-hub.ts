@@ -140,7 +140,8 @@ export class OpenCodeEventHub {
     bufferKey: string;
     permissionChatKey: string;
   } {
-    const conversation = chatSessionStore.getConversationBySessionId(sessionId);
+    const conversation = chatSessionStore.getConversationBySessionId(sessionId)
+      ?? chatSessionStore.getConversationByChatId(fallbackConversationId);
     const platform = conversation?.platform ?? 'feishu';
     const conversationId = conversation?.conversationId ?? fallbackConversationId;
     const bufferKey = platform === 'feishu'
@@ -406,12 +407,12 @@ export class OpenCodeEventHub {
     );
 
     if (chatId) {
-      chatSessionStore.rememberSessionAlias(event.sessionId, chatId, CORRELATION_CACHE_TTL_MS);
+      chatSessionStore.rememberSessionAlias(event.sessionId, chatId, CORRELATION_CACHE_TTL_MS, route?.platform);
       if (event.parentSessionId) {
-        chatSessionStore.rememberSessionAlias(event.parentSessionId, chatId, CORRELATION_CACHE_TTL_MS);
+        chatSessionStore.rememberSessionAlias(event.parentSessionId, chatId, CORRELATION_CACHE_TTL_MS, route?.platform);
       }
       if (event.relatedSessionId) {
-        chatSessionStore.rememberSessionAlias(event.relatedSessionId, chatId, CORRELATION_CACHE_TTL_MS);
+        chatSessionStore.rememberSessionAlias(event.relatedSessionId, chatId, CORRELATION_CACHE_TTL_MS, route?.platform);
       }
       setToolCallCorrelation(event.callId, chatId);
       setMessageCorrelation(event.messageId, chatId);
@@ -572,7 +573,7 @@ export class OpenCodeEventHub {
       outputBuffer.getOrCreate(bufferKey, route.conversationId, sessionID, null);
     }
 
-    chatSessionStore.rememberSessionAlias(sessionID, chatId, CORRELATION_CACHE_TTL_MS);
+    chatSessionStore.rememberSessionAlias(sessionID, chatId, CORRELATION_CACHE_TTL_MS, route.platform);
 
     if (typeof info.id === 'string' && info.id) {
       outputBuffer.setOpenCodeMsgId(bufferKey, info.id);

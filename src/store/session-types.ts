@@ -31,6 +31,7 @@ export interface ChatSessionData {
 
 export interface SessionAliasRecord {
   chatId: string;
+  platform?: string;
   expiresAt: number;
 }
 

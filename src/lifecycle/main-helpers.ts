@@ -146,6 +146,8 @@ export function resolveSessionConversation(
 
   const feishuChatId = chatSessionStore.getChatId(sessionId);
   if (feishuChatId) {
+    const conversation = chatSessionStore.getConversationByChatId(feishuChatId);
+    if (conversation) return conversation;
     return {
       platform: 'feishu',
       conversationId: feishuChatId,

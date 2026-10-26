@@ -94,6 +94,22 @@ class ChatSessionStore {
     return keys !== undefined && keys.size > 0;
   }
 
+  private getUniquePlatformForChatId(chatId: string): string | undefined {
+    const keys = this.chatIdToKeysIndex.get(chatId);
+    if (!keys) return undefined;
+    const platforms = new Set(
+      Array.from(keys)
+        .map(key => this.parseConversationKey(key)?.platform)
+        .filter((platform): platform is string => Boolean(platform))
+    );
+    return platforms.size === 1 ? platforms.values().next().value : undefined;
+  }
+
+  getConversationByChatId(chatId: string): { platform: string; conversationId: string } | null {
+    const platform = this.getUniquePlatformForChatId(chatId);
+    return platform ? { platform, conversationId: chatId } : null;
+  }
+
   private save(): void {
     try {
       const obj = Object.fromEntries(this.data);
@@ -176,6 +192,12 @@ class ChatSessionStore {
           return { platform: parsed.platform, conversationId: parsed.chatId };
         }
       }
+    }
+    this.cleanupExpiredSessionAliases();
+    const alias = this.sessionAliases.get(sessionId);
+    if (alias) {
+      const platform = alias.platform ?? this.getUniquePlatformForChatId(alias.chatId);
+      if (platform) return { platform, conversationId: alias.chatId };
     }
     return null;
   }
@@ -308,6 +330,7 @@ class ChatSessionStore {
     if (current?.sessionId && current.sessionId !== sessionId) {
       this.sessionAliases.set(current.sessionId, {
         chatId: conversationId,
+        platform,
         expiresAt: Date.now() + SESSION_ALIAS_TTL_MS,
       });
       console.log(`[Store] 创建会话别名: session=${current.sessionId} -> chat=${conversationId} (platform: ${platform})`);
@@ -379,6 +402,7 @@ class ChatSessionStore {
     if (current?.sessionId && current.sessionId !== sessionId) {
       this.sessionAliases.set(current.sessionId, {
         chatId,
+        platform: 'feishu',
         expiresAt: Date.now() + SESSION_ALIAS_TTL_MS,
       });
       console.log(`[Store] 创建会话别名: session=${current.sessionId} -> chat=${chatId}`);
@@ -431,7 +455,7 @@ class ChatSessionStore {
     console.log(`[Store] 绑定成功: chat=${chatId} (namespaced: ${namespacedKey}) -> session=${sessionId}`);
   }
 
-  rememberSessionAlias(sessionId: string, chatId: string, ttlMs: number = SESSION_ALIAS_TTL_MS): void {
+  rememberSessionAlias(sessionId: string, chatId: string, ttlMs: number = SESSION_ALIAS_TTL_MS, platform?: string): void {
     const normalizedSessionId = sessionId.trim();
     const normalizedChatId = chatId.trim();
     if (!normalizedSessionId || !normalizedChatId) {
@@ -451,6 +475,7 @@ class ChatSessionStore {
     const safeTtl = Number.isFinite(ttlMs) ? Math.max(60000, Math.floor(ttlMs)) : SESSION_ALIAS_TTL_MS;
     this.sessionAliases.set(normalizedSessionId, {
       chatId: normalizedChatId,
+      platform: platform ?? this.getUniquePlatformForChatId(normalizedChatId),
       expiresAt: Date.now() + safeTtl,
     });
     console.log(`[Store] 记录临时会话别名: session=${normalizedSessionId} -> chat=${normalizedChatId}`);
