@@ -60,7 +60,7 @@ export function toLegacySession(value: unknown): Record<string, any> {
   return { ...session, directory: object(session.location)?.directory ?? session.directory ?? '', time: legacyTime(session.time) };
 }
 
-/** Native text/reasoning ordinals are positions in the assistant content array. */
+/** Native text and reasoning each have their own ordinal sequence. */
 export function legacyPart(sessionID: string, messageID: string, value: unknown, ordinal: number): Record<string, any> | undefined {
   const content = object(value);
   if (!content) return undefined;
@@ -102,7 +102,12 @@ export function toLegacyMessages(sessionId: string, values: unknown[]): Array<{ 
       const model = object(message.model);
       Object.assign(info, { mode: message.agent, agent: message.agent, modelID: model?.id, providerID: model?.providerID,
         ...(parentID ? { parentID } : {}), ...(message.error ? { error: legacyError(message.error) } : {}) });
-      const parts = (Array.isArray(message.content) ? message.content : []).flatMap((part, index) => legacyPart(sessionId, message.id, part, index) ?? []);
+      const ordinals = { text: 0, reasoning: 0 };
+      const parts = (Array.isArray(message.content) ? message.content : []).flatMap(part => {
+        const raw = object(part);
+        const kind = raw?.type === 'text' ? 'text' : raw?.type === 'reasoning' ? 'reasoning' : undefined;
+        return legacyPart(sessionId, message.id, part, kind ? ordinals[kind]++ : 0) ?? [];
+      });
       messages.push({ info, parts });
       continue;
     }

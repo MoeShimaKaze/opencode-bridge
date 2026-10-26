@@ -35,7 +35,7 @@ describe('native record conversion', () => {
         { type: 'tool', id: 'call_ok', name: 'read', state: { status: 'completed', input: { path: 'sample' }, content: [{ type: 'text', text: 'hello sample' }] }, time: { created, ran: created, completed } },
         { type: 'tool', id: 'call_fail', name: 'run', state: { status: 'error', input: {}, error: { type: 'unknown', message: 'Synthetic failure' } }, time: { created, completed } }] }]);
     expect(message.info).toMatchObject({ id: 'msg_shared', role: 'assistant', sessionID: 'ses_shared', mode: 'build', providerID: 'demo', modelID: 'model', time: { created: 1792976400000, completed: 1792976402000 } });
-    expect(message.parts.map(p => p.id)).toEqual(['msg_shared:text:0', 'msg_shared:reasoning:1', 'msg_shared:text:2', 'msg_shared:tool:call_ok', 'msg_shared:tool:call_fail']);
+    expect(message.parts.map(p => p.id)).toEqual(['msg_shared:text:0', 'msg_shared:reasoning:0', 'msg_shared:text:1', 'msg_shared:tool:call_ok', 'msg_shared:tool:call_fail']);
     expect(message.parts[3]).toMatchObject({ type: 'tool', tool: 'read', callID: 'call_ok', state: { status: 'completed', output: 'hello sample', time: { start: 1792976400000, end: 1792976402000 } } });
     expect(message.parts[4]).toMatchObject({ state: { status: 'error', error: 'Synthetic failure' } });
   });

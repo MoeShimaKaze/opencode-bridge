@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { V2EventMapper } from '../src/opencode/v2-events.js';
+import { toLegacyMessages } from '../src/opencode/v2-records.js';
 
 let sequence = 0;
 const event = (type: string, data: Record<string, unknown>) => ({ id: `evt_${++sequence}`, created: 1792976400000 + sequence, type, data });
@@ -35,6 +36,18 @@ describe('native event mapping', () => {
     expect(success).toMatchObject({ id: initial.id, callID: 'call_shared', tool: 'read', state: { status: 'completed', input: { path: 'sample' }, output: 'sample content' } });
     const failure = parts(mapper.map(event('session.tool.failed', { ...ref, id: 'call_failed', executed: true, error: { type: 'unknown', message: 'Synthetic failure' } })))[0].part;
     expect(failure).toMatchObject({ callID: 'call_failed', state: { status: 'error', error: 'Synthetic failure' } });
+  });
+
+  it('uses the same per-kind ordinal part IDs for native history and streamed content', () => {
+    const mapper = new V2EventMapper();
+    const streamed = [
+      ...parts(mapper.map(event('session.text.ended', { ...ref, ordinal: 0, text: 'First' }))),
+      ...parts(mapper.map(event('session.reasoning.ended', { ...ref, ordinal: 0, text: 'Think' }))),
+      ...parts(mapper.map(event('session.text.ended', { ...ref, ordinal: 1, text: 'Second' }))),
+    ];
+    const [history] = toLegacyMessages('ses_shared', [{ id: 'msg_shared', type: 'assistant', time: { created: 1792976400000 },
+      content: [{ type: 'text', text: 'First' }, { type: 'reasoning', text: 'Think' }, { type: 'text', text: 'Second' }] }]);
+    expect(history.parts.map(p => p.id)).toEqual(streamed.map(p => p.part.id));
   });
 
   it('maps execution status, errors and permission tool correlation', () => {
