@@ -120,6 +120,7 @@ export function useChatMessages(sessionId: Ref<string | null>) {
       case 'questions_snapshot':
       case 'question_resolved':
         questions.value=applyQuestionEvent(questions.value,event,sessionId.value ?? '')
+        if(questions.value.length>0)sending.value=false
         return
       case 'task_update':
         tasks.value = event.todos

@@ -16,6 +16,12 @@ it('clears an expired question even if its resolution SSE event was lost',async(
   expect(await model.answerQuestion([['Continue']])).toBe(true);
   expect(model.activeQuestion.value).toBeNull();expect(model.questionBusy.value).toBe(false);
 });
+it('releases the normal composer when a running prompt pauses for a question',()=>{
+  model.sending.value=true;
+  state.onEvent({type:'question_ask',req:question});
+  expect(model.sending.value).toBe(false);
+  expect(model.activeQuestion.value?.id).toBe('frm_one');
+});
 it('retains a temporary failed answer for retry',async()=>{
   state.respond.mockRejectedValue(new Error('Synthetic network interruption'));
   expect(await model.answerQuestion([['Continue']])).toBe(false);

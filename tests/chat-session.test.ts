@@ -1,38 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+// These tests exercise in-memory namespace behavior, not filesystem persistence.
+// The production store uses a module-level path; the old test-only field never redirected it.
+vi.mock('fs',async importOriginal=>({...await importOriginal<typeof import('fs')>(),existsSync:()=>false,writeFileSync:vi.fn()}));
 import { chatSessionStore } from '../src/store/chat-session.js';
-import * as fs from 'fs';
-import * as path from 'path';
 import {
-  setChatSessionStoreTestFile,
   clearChatSessionStoreData,
   setChatSessionDataDirectly,
   setChatSessionAlias,
   deleteChatSessionData,
 } from './test-utils.js';
 
-const TEST_STORE_FILE = path.join(process.cwd(), '.chat-sessions.test.json');
-
 describe('ChatSessionStore - Namespaced/Legacy Compatibility', () => {
   beforeEach(() => {
-    // 备份现有存储文件（如果存在）
-    if (fs.existsSync('.chat-sessions.json')) {
-      fs.copyFileSync('.chat-sessions.json', '.chat-sessions.backup.json');
-    }
-    // 使用测试存储文件
-    setChatSessionStoreTestFile(TEST_STORE_FILE);
     // 清空数据
     clearChatSessionStoreData();
-  });
-
-  afterEach(() => {
-    // 清理测试文件
-    if (fs.existsSync(TEST_STORE_FILE)) {
-      fs.unlinkSync(TEST_STORE_FILE);
-    }
-    // 恢复原存储文件
-    if (fs.existsSync('.chat-sessions.backup.json')) {
-      fs.renameSync('.chat-sessions.backup.json', '.chat-sessions.json');
-    }
   });
 
   it('应该支持从旧格式 chatId 读取会话（向后兼容）', () => {
@@ -173,7 +154,6 @@ describe('ChatSessionStore - Namespaced/Legacy Compatibility', () => {
 
 describe('ChatSessionStore - Platform-Aware Binding (Discord)', () => {
   beforeEach(() => {
-    setChatSessionStoreTestFile(TEST_STORE_FILE);
     clearChatSessionStoreData();
   });
 

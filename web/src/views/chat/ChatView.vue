@@ -71,7 +71,7 @@
       :draft-attachments-key="draftAttachmentsKey"
       :disabled="false"
       :sending="sending"
-      :can-abort="running"
+      :can-abort="running && !question"
       :aborting="aborting"
       @submit="$emit('submit', $event)"
       @abort="$emit('abort')"
