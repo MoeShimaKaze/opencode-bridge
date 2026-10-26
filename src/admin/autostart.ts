@@ -27,6 +27,9 @@ const LINUX_DESKTOP_FILENAME = 'opencode-bridge.desktop';
  * 源码 / 后台部署没有可靠的「自启目标」，UI 应明确禁用。
  */
 function detectExecutablePath(): string | null {
+  if(process.platform==='win32' && process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND?.trim()) {
+    return process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND.trim();
+  }
   const exec = process.execPath;
   if (!exec) return null;
   const lower = exec.toLowerCase();
@@ -51,12 +54,12 @@ function winQuery(): boolean {
     windowsHide: true,
     encoding: 'utf-8',
   });
-  return r.status === 0;
+  return r.status === 0 && String(r.stdout).includes(process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND?.trim() || '');
 }
 
 function winEnable(execPath: string): void {
   // 注意：注册表值需要带引号包裹路径
-  const value = `"${execPath}"`;
+  const value = process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND?.trim() || `"${execPath}"`;
   const r = spawnSync(
     'reg',
     ['add', REG_KEY, '/v', REG_VALUE, '/t', 'REG_SZ', '/d', value, '/f'],

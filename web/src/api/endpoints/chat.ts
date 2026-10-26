@@ -59,13 +59,13 @@ export const chatApi = {
     return Array.isArray(res.data.workspaces) ? res.data.workspaces : []
   },
 
-  async listAgents(): Promise<ChatAgentInfo[]> {
-    const res = await http.get<{ agents: ChatAgentInfo[] }>('/chat/agents')
+  async listAgents(directory?: string): Promise<ChatAgentInfo[]> {
+    const res = await http.get<{ agents: ChatAgentInfo[] }>('/chat/agents', {params:{directory}})
     return Array.isArray(res.data.agents) ? res.data.agents : []
   },
 
-  async listModels(): Promise<ChatModelProviderInfo[]> {
-    const res = await http.get<{ providers: ChatModelProviderInfo[] }>('/chat/models')
+  async listModels(directory?: string): Promise<ChatModelProviderInfo[]> {
+    const res = await http.get<{ providers: ChatModelProviderInfo[] }>('/chat/models', {params:{directory}})
     return Array.isArray(res.data.providers) ? res.data.providers : []
   },
 

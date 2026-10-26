@@ -2,6 +2,7 @@ import type { OpencodeClient as SdkOpencodeClient } from '@opencode-ai/sdk';
 import type { Message, Part } from '@opencode-ai/sdk';
 import type { PermissionResponseOptions, ShellExecutionResult } from './client.js';
 import { opencodeConfig, modelConfig } from '../config.js';
+import { fetchOpenCode, getOpenCodeProtocol } from './shared-transport.js';
 import {
   withOpencodeAuthorizationHeaders,
   appendAuthHint,
@@ -37,6 +38,8 @@ export class MessagesManager {
       };
     }
 
+    // A native session already has an authoritative model/Agent selection.
+    if (getOpenCodeProtocol() === 'v2') return undefined;
     const defaultProvider = modelConfig.defaultProvider;
     const defaultModel = modelConfig.defaultModel;
     if (defaultProvider && defaultModel) {
@@ -138,7 +141,7 @@ export class MessagesManager {
     }
 
     const dirQuery = options?.directory ? `?directory=${encodeURIComponent(options.directory)}` : '';
-    const response = await fetch(`${opencodeConfig.baseUrl}/session/${sessionId}/prompt_async${dirQuery}`, {
+    const response = await fetchOpenCode(`${opencodeConfig.baseUrl}/session/${sessionId}/prompt_async${dirQuery}`, {
       method: 'POST',
       headers: withOpencodeAuthorizationHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -178,7 +181,7 @@ export class MessagesManager {
     }
 
     const dirQuery = options?.directory ? `?directory=${encodeURIComponent(options.directory)}` : '';
-    const response = await fetch(`${opencodeConfig.baseUrl}/session/${sessionId}/prompt_async${dirQuery}`, {
+    const response = await fetchOpenCode(`${opencodeConfig.baseUrl}/session/${sessionId}/prompt_async${dirQuery}`, {
       method: 'POST',
       headers: withOpencodeAuthorizationHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -251,7 +254,7 @@ export class MessagesManager {
       : undefined;
 
     const dirQuery = options?.directory ? `?directory=${encodeURIComponent(options.directory)}` : '';
-    const response = await fetch(`${opencodeConfig.baseUrl}/session/${sessionId}/shell${dirQuery}`, {
+    const response = await fetchOpenCode(`${opencodeConfig.baseUrl}/session/${sessionId}/shell${dirQuery}`, {
       method: 'POST',
       headers: withOpencodeAuthorizationHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -395,7 +398,7 @@ export class MessagesManager {
     for (const directory of directoryCandidates) {
       try {
         const query = directory ? `?directory=${encodeURIComponent(directory)}` : '';
-        const response = await fetch(
+        const response = await fetchOpenCode(
           `${opencodeConfig.baseUrl}/session/${sessionId}/permissions/${permissionId}${query}`,
           {
             method: 'POST',
@@ -441,7 +444,7 @@ export class MessagesManager {
     answers: string[][]
   ): Promise<{ ok: boolean; expired?: boolean }> {
     try {
-      const response = await fetch(
+      const response = await fetchOpenCode(
         `${opencodeConfig.baseUrl}/question/${requestId}/reply`,
         {
           method: 'POST',
@@ -473,7 +476,7 @@ export class MessagesManager {
   // 拒绝/跳过问题
   async rejectQuestion(requestId: string): Promise<{ ok: boolean; expired?: boolean }> {
     try {
-      const response = await fetch(
+      const response = await fetchOpenCode(
         `${opencodeConfig.baseUrl}/question/${requestId}/reject`,
         {
           method: 'POST',

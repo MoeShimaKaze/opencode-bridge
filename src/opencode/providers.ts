@@ -19,12 +19,12 @@ export class ProvidersManager {
   }
 
   // 获取配置（含模型列表）
-  async getProviders(): Promise<{
+  async getProviders(options?: {directory?: string}): Promise<{
     providers: Array<{ id: string; name: string; models: Array<{ id: string; name: string }> }>;
     default: Record<string, string>;
   }> {
     const client = this.getClient();
-    const result = await client.config.providers();
+    const result = await client.config.providers(options?.directory ? {query:{directory:options.directory}} : undefined);
     return result.data as unknown as {
       providers: Array<{ id: string; name: string; models: Array<{ id: string; name: string }> }>;
       default: Record<string, string>;
@@ -195,9 +195,9 @@ export class ProvidersManager {
   }
 
   // 获取可用 Agent 列表
-  async getAgents(): Promise<OpencodeAgentInfo[]> {
+  async getAgents(options?: {directory?: string}): Promise<OpencodeAgentInfo[]> {
     const client = this.getClient();
-    const result = await client.app.agents();
+    const result = await client.app.agents(options?.directory ? {query:{directory:options.directory}} : undefined);
     const rawAgents = Array.isArray(result.data) ? result.data : [];
     const agents: OpencodeAgentInfo[] = [];
 

@@ -1,0 +1,23 @@
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const source=process.env.BRIDGE_SOURCE_ROOT;
+const runtime=process.env.BRIDGE_RUNTIME_ROOT;
+if(!source || !runtime)throw new Error('Native Bridge deployment paths are required');
+process.chdir(runtime);
+process.env.BRIDGE_EMBEDDED_MODE='1';
+process.env.BRIDGE_SPAWNED_BY_ADMIN='1';
+process.env.ADMIN_HOST='127.0.0.1';
+process.env.FEISHU_APP_ID='disabled-unused';
+process.env.FEISHU_APP_SECRET='disabled-unused';
+const powershell=path.join(process.env.SystemRoot ?? 'C:\\Windows','System32/WindowsPowerShell/v1.0/powershell.exe');
+process.env.OPENCODE_BRIDGE_AUTOSTART_COMMAND=`"${powershell}" -NoP -NonI -W Hidden -Exec RemoteSigned -File "${path.join(runtime,'start.ps1')}"`;
+const load=(file)=>import(pathToFileURL(path.join(source,'dist',file)).href);
+await load('config.js');
+const {createAdminServer}=await load('admin/admin-server.js');
+const {bridgeManager}=await load('admin/bridge-manager.js');
+const {VERSION}=await load('utils/version.js');
+const server=createAdminServer({port:Number(process.env.ADMIN_PORT ?? 4098),version:VERSION,bridgeManager});
+await server.start();
+const result=await bridgeManager.start();
+if(!result.success)throw new Error(result.error);

@@ -2,6 +2,7 @@ import type { OpencodeClient as SdkOpencodeClient } from '@opencode-ai/sdk';
 import type { Session, Project, Message, Part } from '@opencode-ai/sdk';
 import type { SessionQueryOptions } from './client.js';
 import { formatSdkError, appendAuthHint } from './client-helpers.js';
+import { getOpenCodeProtocol } from './shared-transport.js';
 
 export interface SessionsDeps {
   getClient: () => SdkOpencodeClient | null;
@@ -49,6 +50,7 @@ export class SessionsManager {
 
   // 跨工作区聚合会话列表
   async listSessionsAcrossProjects(): Promise<Session[]> {
+    if (getOpenCodeProtocol() === 'v2') return this.listSessions();
     const merged = new Map<string, Session>();
     const upsertSessions = (sessions: Session[]): void => {
       for (const session of sessions) {
@@ -118,6 +120,7 @@ export class SessionsManager {
 
   // 聚合查询所有已知目录的 session（默认 Instance + 各自定义 directory Instance）
   async listAllSessions(knownDirectories: string[]): Promise<Session[]> {
+    if (getOpenCodeProtocol() === 'v2') return this.listSessions();
     const allSessions: Session[] = [];
     const seen = new Set<string>();
 

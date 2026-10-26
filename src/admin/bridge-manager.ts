@@ -63,11 +63,11 @@ export class BridgeManager {
       console.log('[BridgeManager] 内嵌模式启动 Bridge...');
 
       // 动态导入 Bridge 模块
-      const { startBridge } = await import('../index.js');
+      const { startBridge, stopBridge } = await import('../index.js');
 
       this.startedAt = new Date();
       const controller = await startBridge();
-      this.embeddedStopFn = controller.stop;
+      this.embeddedStopFn = stopBridge;
 
       this.notifyStatusChange({
         running: true,

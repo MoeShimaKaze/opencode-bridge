@@ -369,9 +369,9 @@ export function registerChatMetaRoutes(app: Application): void {
     }
   });
 
-  router.get('/agents', async (_req: Request, res: Response) => {
+  router.get('/agents', async (req: Request, res: Response) => {
     try {
-      const agents = (await opencodeClient.getAgents())
+      const agents = (await opencodeClient.getAgents(typeof req.query.directory === 'string' ? {directory:req.query.directory} : undefined))
         .filter(agent => agent.hidden !== true)
         .sort((left, right) => left.name.localeCompare(right.name, 'zh-Hans-CN'));
 
@@ -382,9 +382,9 @@ export function registerChatMetaRoutes(app: Application): void {
     }
   });
 
-  router.get('/models', async (_req: Request, res: Response) => {
+  router.get('/models', async (req: Request, res: Response) => {
     try {
-      const providersResult = await opencodeClient.getProviders();
+      const providersResult = await opencodeClient.getProviders(typeof req.query.directory === 'string' ? {directory:req.query.directory} : undefined);
       const providers = Array.isArray(providersResult.providers) ? providersResult.providers : [];
       const whitelist = new Set(modelConfig.chatModelWhitelist.map(item => item.toLowerCase()));
       const useWhitelist = whitelist.size > 0;
